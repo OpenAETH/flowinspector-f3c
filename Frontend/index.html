@@ -1226,6 +1226,7 @@ const API = "";
 // ════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════
+const State = { analysis: null, selectedFile: null, uploadMode: 'file' };
 
 // ════════════════════════════════════════════════
 // AUTH MODULE
@@ -1288,20 +1289,6 @@ const Auth = {
     }
   },
 };
-
-
-  async uploadWebZip(file) {
-    UI.showLoading('Analizando ZIP web…');
-    try {
-      const fd = new FormData(); fd.append('file', file);
-      const r = await fetch(`${API}/analyze/web-zip`, { method:'POST', headers: Auth.headers(), body:fd });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'Error');
-      UI.onAnalysis(data);
-    } catch(e) { UI.onError(e.message); }
-  },
-
-const State = { analysis: null, selectedFile: null, uploadMode: 'file' };
 
 // ════════════════════════════════════════════════
 // HELPERS
@@ -1466,6 +1453,8 @@ const UI = {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
     if (tab === 'trace' && State.selectedFile) UI.renderTrace(State.selectedFile);
+    if (tab === 'sessions') Sessions.load();
+    if (tab === 'audit') Audit.loadSelects();
   },
 
   showUpload() {
@@ -1476,6 +1465,8 @@ const UI = {
     $('graph-legend').style.display   = 'none';
     $('graph-controls').style.display = 'none';
     $('graph-filter-bar').classList.remove('show');
+    $('runtime-bar').classList.remove('show');
+    $('mini-timeline').classList.remove('show');
     UI.setUploadMode('file');
     $('file-list').innerHTML   = '<div class="empty">Sin archivos</div>';
     $('files-panel').innerHTML = '<div class="empty">Cargá un repositorio para ver los archivos.</div>';
@@ -1495,24 +1486,24 @@ const UI = {
   setUploadMode(mode) {
     State.uploadMode = mode;
 
-  // Web mode additions
-  if (mode === 'web-zip') {
-    State.uploadMode = 'web-zip';
-    $('drop-area').style.display = 'block';
-    $('dump-area').style.display = 'none';
-    $('file-input').accept = '.zip';
-    $('drop-title').textContent = 'Arrastrá tu .zip web aquí';
-    $('drop-sub').textContent = 'o hacé clic — acepta .html, .css, .js';
-    $('drop-area').onclick = () => $('file-input').click();
-    return;
-  }
-  if (mode === 'web-dump') {
-    State.uploadMode = 'web-dump';
-    $('drop-area').style.display = 'none';
-    $('dump-area').style.display = 'block';
-    $('dump-input').placeholder = 'Pegá aquí el dump de tu proyecto web (HTML/CSS/JS en formato machete)…';
-    return;
-  }
+    // Web mode additions
+    if (mode === 'web-zip') {
+      State.uploadMode = 'web-zip';
+      $('drop-area').style.display = 'block';
+      $('dump-area').style.display = 'none';
+      $('file-input').accept = '.zip';
+      $('drop-title').textContent = 'Arrastrá tu .zip web aquí';
+      $('drop-sub').textContent = 'o hacé clic — acepta .html, .css, .js';
+      $('drop-area').onclick = () => $('file-input').click();
+      return;
+    }
+    if (mode === 'web-dump') {
+      State.uploadMode = 'web-dump';
+      $('drop-area').style.display = 'none';
+      $('dump-area').style.display = 'block';
+      $('dump-input').placeholder = 'Pegá aquí el dump de tu proyecto web (HTML/CSS/JS en formato machete)…';
+      return;
+    }
 
     ['file','folder','zip','dump'].forEach(m => {
       const el = $(`umode-${m}`); if (el) el.classList.toggle('active', m === mode);
@@ -1554,6 +1545,17 @@ const UI = {
     try {
       const fd = new FormData(); fd.append('file', file);
       const r = await fetch(`${API}/analyze/zip`, { method:'POST', body:fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Error');
+      UI.onAnalysis(data);
+    } catch(e) { UI.onError(e.message); }
+  },
+
+  async uploadWebZip(file) {
+    UI.showLoading('Analizando ZIP web…');
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch(`${API}/analyze/web-zip`, { method:'POST', headers: Auth.headers(), body:fd });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || 'Error');
       UI.onAnalysis(data);
@@ -1635,6 +1637,28 @@ const UI = {
     $('graph-controls').style.display = 'flex';
     $('graph-filter-bar').classList.add('show');
     AI.onAnalysisReady(data);
+
+    // Runtime init
+    const flowId = 'flow-' + Date.now().toString(36);
+    State.currentFlowId = flowId;
+    fetch(`${API}/flows/${flowId}/attach`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...Auth.headers() },
+      body: JSON.stringify(data),
+    }).catch(() => {});
+    Runtime.init(flowId);
+    
+    // Pre-fill audit selector
+    setTimeout(() => {
+      const sel = $('audit-flow');
+      if (sel && State.currentFlowId) {
+        if (![...sel.options].some(o => o.value === State.currentFlowId)) {
+          sel.innerHTML += `<option value="${State.currentFlowId}">${State.currentFlowId} (actual)</option>`;
+        }
+        sel.value = State.currentFlowId;
+        $('audit-run-btn').disabled = false;
+      }
+    }, 500);
   },
 
   onError(msg) {
@@ -1684,6 +1708,7 @@ const UI = {
     UI.renderDetailForFile(path);
     Graph.highlightFile(path);
     if ($('tab-trace').classList.contains('active')) UI.renderTrace(path);
+    UI.openDetail();
   },
 
   // ── Detail panel ──────────────────────────────
@@ -1840,185 +1865,68 @@ const UI = {
   // ── Traceability tab ──────────────────────────
   async renderTrace(path) {
     if (!State.analysis) return;
-    $('trace-panel').innerHTML = '<div class="empty">Cargando…</div>';
+    const tp = $('trace-panel');
+    tp.innerHTML = '<div class="empty">Cargando trazabilidad…</div>';
     try {
-      const r = await fetch(`${API}/traceability`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          filepath: path,
-          analysis: {
-            files:        Object.fromEntries(State.analysis.files.map(f=>[f.path,''])),
-            dependencies: State.analysis.dependencies,
-            structure:    State.analysis.structure,
-            call_graph:   State.analysis.call_graph,
-            graph:        State.analysis.graph,
-          },
-        }),
-      });
-      const t = await r.json();
-
-      // ── Header stats ─────────────────────────────────────────────────────
-      const downInternal = (t.downstream || t.imports || []).filter(i => i.is_internal);
-      const upCount      = (t.upstream   || t.imported_by || []).length;
-      let h = `<div class="sec-hdr" style="margin-top:0">📄 ${t.filename}</div>
-      <div class="stats-grid">
-        <div class="stat-box"><div class="stat-num">${t.classes.length}</div><div class="stat-lbl">Clases</div></div>
-        <div class="stat-box"><div class="stat-num">${t.functions.length}</div><div class="stat-lbl">Funciones</div></div>
-        <div class="stat-box">
-          <div class="stat-num" style="color:${upCount>0?'var(--accent4)':'var(--muted)'}">${upCount}</div>
-          <div class="stat-lbl">Upstream</div>
-        </div>
-      </div>`;
-
-      // ── UPSTREAM: who depends on this file ────────────────────────────────
-      const upstream = t.upstream || t.imported_by || [];
-      if (upstream.length) {
-        h += `<div class="sec-hdr">
-          <span style="color:var(--accent4)">↑ UPSTREAM</span>
-          <span style="color:var(--muted);font-weight:400"> — quién usa este archivo (${upstream.length})</span>
-        </div>`;
-        upstream.forEach(ib => {
-          const ep       = CSS.escape(ib.file);
-          const fname    = ib.file.split('/').pop();
-          const symbols  = ib.symbols || [];
-          const usedCls  = ib.used_classes  || [];
-          const usedFns  = ib.used_functions || [];
-          const hasSyms  = symbols.length > 0;
-
-          h += `<div style="background:rgba(251,146,60,.05);border:1px solid rgba(251,146,60,.15);
-                border-radius:6px;margin-bottom:6px;overflow:hidden">
-            <div class="import-row" style="cursor:pointer;padding:7px 10px;background:transparent"
-              onclick="UI.selectFile('${ep}')"
-              onmouseenter="Tooltip.showForElement(this,'${fname}','Clic para ver detalle de ${fname}')"
-              onmouseleave="Tooltip.hide()">
-              <span style="color:var(--accent4);font-size:10px;padding:1px 6px;border-radius:3px;
-                background:rgba(251,146,60,.12);flex-shrink:0;font-weight:600">upstream</span>
-              <span style="font-weight:600;color:var(--text)">${fname}</span>
-              ${hasSyms ? `<span style="color:var(--muted);font-size:10px;margin-left:auto">usa ${symbols.length} símbolo${symbols.length>1?'s':''}</span>` : ''}
-            </div>`;
-
-          if (hasSyms) {
-            h += `<div style="padding:4px 10px 8px;display:flex;flex-wrap:wrap;gap:4px">`;
-            usedCls.forEach(s => {
-              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
-                background:rgba(167,139,250,.12);color:var(--n-class)">⬡ ${s}</span>`;
-            });
-            usedFns.forEach(s => {
-              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
-                background:rgba(52,211,153,.1);color:var(--n-fn)">ƒ ${s}</span>`;
-            });
-            // symbols without classification
-            const classified = new Set([...usedCls, ...usedFns]);
-            symbols.filter(s => !classified.has(s)).forEach(s => {
-              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
-                background:var(--bg3);color:var(--dim)">${s}</span>`;
-            });
-            h += `</div>`;
-          }
-          h += `</div>`;
+      const data   = State.analysis;
+      const file   = data.files.find(f => f.path === path);
+      if (!file) throw new Error("Archivo no encontrado");
+      const struct = data.structure?.[path] || { classes: {}, functions: [] };
+      const deps   = data.dependencies?.[path] || { all: [], internal: [], external: [] };
+      const base   = file.name.replace(/\.py$/, "");
+      const ups    = [];
+      for (const [fp, dep] of Object.entries(data.dependencies || {})) {
+        if (fp !== path && (dep.internal || []).includes(base)) ups.push(fp);
+      }
+      const nCls = Object.keys(struct.classes || {}).length;
+      const nFn  = (struct.functions || []).length;
+      let h = '<div class="sec-hdr" style="margin-top:0">📄 ' + file.name + '</div>'
+            + '<div class="stats-grid">'
+            + '<div class="stat-box"><div class="stat-num">' + nCls + '</div><div class="stat-lbl">Clases</div></div>'
+            + '<div class="stat-box"><div class="stat-num">' + nFn + '</div><div class="stat-lbl">Funciones</div></div>'
+            + '<div class="stat-box"><div class="stat-num" style="color:' + (ups.length > 0 ? "var(--accent4)" : "var(--muted)") + '">' + ups.length + '</div><div class="stat-lbl">Upstream</div></div>'
+            + '</div>';
+      if (ups.length) {
+        h += '<div class="sec-hdr"><span style="color:var(--accent4)">↑ UPSTREAM</span><span style="color:var(--muted);font-weight:400"> ('  + ups.length + ')</span></div>';
+        ups.forEach(fp => {
+          const fn = fp.split("/").pop();
+          const ep = CSS.escape(fp);
+          h += '<div style="background:rgba(251,146,60,.05);border:1px solid rgba(251,146,60,.15);border-radius:6px;margin-bottom:6px">'
+             + '<div class="import-row" style="cursor:pointer;padding:7px 10px" onclick="UI.selectFile(\''  + ep + '\')">'  
+             + '<span style="color:var(--accent4);font-size:10px;padding:1px 6px;border-radius:3px;background:rgba(251,146,60,.12);flex-shrink:0;font-weight:600">upstream</span>'
+             + '<span style="font-weight:600;color:var(--text)">' + fn + '</span></div></div>';
         });
       } else {
-        h += `<div class="sec-hdr"><span style="color:var(--accent4)">↑ UPSTREAM</span></div>
-        <div style="color:var(--muted);font-size:11px;padding:6px 0 12px">
-          Ningún archivo importa este — posible punto de entrada o script raíz.
-        </div>`;
+        h += '<div class="sec-hdr"><span style="color:var(--accent4)">↑ UPSTREAM</span></div>'
+           + '<div style="color:var(--muted);font-size:11px;padding:6px 0 12px">Ningún archivo importa este — punto de entrada o script raíz.</div>';
       }
-
-      // ── DOWNSTREAM: what this file imports ────────────────────────────────
-      const downstream = t.downstream || t.imports || [];
-      const downInternalList = downstream.filter(i => i.is_internal);
-      const downExternalList = downstream.filter(i => !i.is_internal);
-
-      if (downInternalList.length) {
-        h += `<div class="sec-hdr">
-          <span style="color:var(--accent2)">↓ DOWNSTREAM interno</span>
-          <span style="color:var(--muted);font-weight:400"> — archivos que usa (${downInternalList.length})</span>
-        </div>`;
-        downInternalList.forEach(imp => {
-          const fname   = (imp.resolved_path || imp.module).split('/').pop();
-          const ep      = CSS.escape(imp.resolved_path || '');
-          const symbols = imp.symbols || [];
-          const usedCls = imp.used_classes  || [];
-          const usedFns = imp.used_functions || [];
-
-          h += `<div style="background:rgba(167,139,250,.05);border:1px solid rgba(167,139,250,.15);
-                border-radius:6px;margin-bottom:6px;overflow:hidden">
-            <div class="import-row" style="cursor:pointer;padding:7px 10px"
-              onclick="${imp.resolved_path ? `UI.selectFile('${ep}')` : ''}"
-              onmouseenter="Tooltip.showForElement(this,'${imp.module}','${fname}')"
-              onmouseleave="Tooltip.hide()">
-              <span style="color:var(--accent2);font-size:10px;padding:1px 6px;border-radius:3px;
-                background:rgba(167,139,250,.12);flex-shrink:0;font-weight:600">interno</span>
-              <span style="font-weight:600;color:var(--text)">${imp.module}</span>
-              <span style="color:var(--muted);font-size:10px;margin-left:auto">${fname}</span>
-            </div>`;
-
-          if (symbols.length) {
-            h += `<div style="padding:4px 10px 8px;display:flex;flex-wrap:wrap;gap:4px">`;
-            usedCls.forEach(s => {
-              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
-                background:rgba(167,139,250,.12);color:var(--n-class)">⬡ ${s}</span>`;
-            });
-            usedFns.forEach(s => {
-              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
-                background:rgba(52,211,153,.1);color:var(--n-fn)">ƒ ${s}</span>`;
-            });
-            const classified = new Set([...usedCls, ...usedFns]);
-            symbols.filter(s => !classified.has(s)).forEach(s => {
-              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
-                background:var(--bg3);color:var(--dim)">${s}</span>`;
-            });
-            h += `</div>`;
-          }
-          h += `</div>`;
-        });
+      if (deps.internal?.length) {
+        h += '<div class="sec-hdr"><span style="color:var(--accent2)">↓ DOWNSTREAM interno</span> (' + deps.internal.length + ')</div>';
+        deps.internal.forEach(m => { h += '<div class="import-row"><span class="import-type int">interno</span><span>' + m + '</span></div>'; });
       }
-
-      if (downExternalList.length) {
-        h += `<div class="sec-hdr">
-          <span style="color:var(--dim)">↓ DOWNSTREAM externo</span>
-          <span style="color:var(--muted);font-weight:400"> — dependencias del sistema (${downExternalList.length})</span>
-        </div>`;
-        downExternalList.forEach(imp => {
-          h += `<div class="import-row">
-            <span class="import-type ext">externo</span>
-            <span>${imp.module}</span>
-          </div>`;
-        });
+      if (deps.external?.length) {
+        h += '<div class="sec-hdr"><span style="color:var(--dim)">↓ DOWNSTREAM externo</span> (' + deps.external.length + ')</div>';
+        deps.external.forEach(m => { h += '<div class="import-row"><span class="import-type ext">externo</span><span>' + m + '</span></div>'; });
       }
-
-      // ── Structure of this file ────────────────────────────────────────────
-      if (t.classes.length || t.functions.length) {
-        h += `<div class="sec-hdr">Estructura interna</div>`;
-        t.classes.forEach(cls => {
-          const cid = `class:${cls.name}`;
-          h += `<div class="tree-node-hdr"
-            onmouseenter="UI._hoverNode(event,'${CSS.escape(cid)}')"
-            onmouseleave="Tooltip.hide()">
-            <span class="tree-icon" style="color:var(--n-class)">⬡</span>
-            <span class="tree-label">${cls.name}</span>
-            ${cls.inherits.length?`<span style="color:var(--muted);font-size:10px">← ${cls.inherits.join(',')}</span>`:''}
-          </div>`;
-          cls.methods.forEach(m => {
-            const mid = `method:${cls.name}.${m}`;
-            h += `<div class="tree-node-hdr" style="padding-left:16px"
-              onmouseenter="UI._hoverNode(event,'${CSS.escape(mid)}')"
-              onmouseleave="Tooltip.hide()">
-              <span class="tree-icon" style="color:var(--n-fn)">ƒ</span>
-              <span class="tree-label">${m}()</span></div>`;
+      const cls = Object.entries(struct.classes || {});
+      const fns = struct.functions || [];
+      if (cls.length || fns.length) {
+        h += '<div class="sec-hdr">Estructura interna</div>';
+        cls.forEach(([cn, cd]) => {
+          h += '<div class="tree-node-hdr"><span class="tree-icon" style="color:var(--n-class)">⬡</span><span class="tree-label">' + cn + '</span></div>';
+          (cd.methods || []).forEach(m => {
+            const mn = typeof m === "string" ? m : m.name;
+            h += '<div class="tree-node-hdr" style="padding-left:16px"><span class="tree-icon" style="color:var(--n-fn)">ƒ</span><span class="tree-label">' + mn + '()</span></div>';
           });
         });
-        t.functions.forEach(fn => {
-          h += `<div class="tree-node-hdr">
-            <span class="tree-icon" style="color:var(--accent4)">ƒ</span>
-            <span class="tree-label">${fn}()</span>
-          </div>`;
+        fns.forEach(fn => {
+          const nm = typeof fn === "string" ? fn : fn.name;
+          h += '<div class="tree-node-hdr"><span class="tree-icon" style="color:var(--accent4)">ƒ</span><span class="tree-label">' + nm + '()</span></div>';
         });
       }
-
-      $('trace-panel').innerHTML = h;
+      tp.innerHTML = h;
     } catch(e) {
-      $('trace-panel').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+      $('trace-panel').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
     }
   },
 
@@ -2027,6 +1935,99 @@ const UI = {
     const blob = new Blob([JSON.stringify(State.analysis,null,2)],{type:'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'flow_inspector_analysis.json'; a.click();
+  },
+
+  // ── Node detail ────────────────────────────────────────────────
+  showNodeDetail(id, node) {
+    if (!node) {
+      $('detail-title').textContent = 'Detalle';
+      $('detail-body').innerHTML = '<div class="empty">Nodo no encontrado</div>';
+      return;
+    }
+    $('detail-title').textContent = node.label || id;
+    const ei    = Graph.edges.filter(e => e.to   === id).length;
+    const eo    = Graph.edges.filter(e => e.from === id).length;
+    const calls = Graph.edges.filter(e => e.to   === id && e.relation === 'CALLS').length;
+    let h = `<div class="card">
+      <div class="metric-row"><span class="metric-label">Tipo</span><span class="metric-value">${node.type}</span></div>
+      <div class="metric-row"><span class="metric-label">Entradas</span><span class="metric-value">${ei}</span></div>
+      <div class="metric-row"><span class="metric-label">Salidas</span><span class="metric-value">${eo}</span></div>
+      <div class="metric-row"><span class="metric-label">Calls entrantes</span>
+        <span class="metric-value ${calls===0&&node.type==='function'?'err':''}">${calls}</span></div>
+    </div>`;
+    if (node.decorators?.length) {
+      h += `<div class="sec-hdr">Decoradores</div>`;
+      node.decorators.forEach(d => { h += `<div class="import-row">@${d}</div>`; });
+    }
+    if (node.inherits?.length) {
+      h += `<div class="sec-hdr">Herencia</div>`;
+      node.inherits.forEach(i => { h += `<div class="import-row">← ${i}</div>`; });
+    }
+    if (node.type === 'file' && node.path) {
+      h += `<br/><button class="btn" style="width:100%" onclick="UI.selectFile('${CSS.escape(node.path)}')">Ver detalle completo</button>`;
+    }
+    $('detail-body').innerHTML = h;
+    if (window.innerWidth < 768) UI.openDetail();
+  },
+
+  // ── Web Files Tab ─────────────────────────────────
+  renderWebFilesTab(data) {
+    const s = data.summary;
+    let h = `<div class="stats-grid">
+      <div class="stat-box"><div class="stat-num">${s.html_files||0}</div><div class="stat-lbl">HTML</div></div>
+      <div class="stat-box"><div class="stat-num">${s.css_files||0}</div><div class="stat-lbl">CSS</div></div>
+      <div class="stat-box"><div class="stat-num">${s.js_files||0}</div><div class="stat-lbl">JS/TS</div></div>
+    </div>`;
+    (data.files||[]).forEach(f => {
+      const typeIcon = {html:'🌐',css:'🎨',js:'⚡',ts:'⚡'}[f.type]||'📄';
+      const typeColor = {html:'var(--accent)',css:'var(--accent3)',js:'var(--warn)'}[f.type]||'var(--dim)';
+      h += `<div class="card">
+        <div class="card-title" style="color:${typeColor}">${typeIcon} ${f.name} <span class="mode-badge web">${f.type.toUpperCase()}</span></div>`;
+      if (f.type === 'html') {
+        if (f.title) h += `<div class="metric-row"><span class="metric-label">Título</span><span class="metric-value" style="color:var(--text)">${f.title}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">Scripts externos</span><span class="metric-value accent">${f.scripts}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">Stylesheets</span><span class="metric-value accent">${f.stylesheets}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">IDs únicos</span><span class="metric-value">${f.ids}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">Clases CSS usadas</span><span class="metric-value">${f.classes_count}</span></div>`;
+        if (f.forms) h += `<div class="metric-row"><span class="metric-label">Formularios</span><span class="metric-value">${f.forms}</span></div>`;
+        if (f.custom_elements?.length) h += `<div class="metric-row"><span class="metric-label">Web Components</span><span class="metric-value accent">${f.custom_elements.join(', ')}</span></div>`;
+      } else if (f.type === 'css') {
+        h += `<div class="metric-row"><span class="metric-label">Reglas CSS</span><span class="metric-value accent">${f.rule_count}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">Variables CSS</span><span class="metric-value">${f.variables}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">Media queries</span><span class="metric-value">${f.media_queries}</span></div>`;
+        if (f.keyframes?.length) h += `<div class="metric-row"><span class="metric-label">Animaciones</span><span class="metric-value">${f.keyframes.join(', ')}</span></div>`;
+        if (f.imports?.length) h += `<div class="metric-row"><span class="metric-label">@imports</span><span class="metric-value">${f.imports.join(', ')}</span></div>`;
+      } else if (f.type === 'js') {
+        h += `<div class="metric-row"><span class="metric-label">Funciones</span><span class="metric-value accent">${f.functions?.length||0}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">Clases JS</span><span class="metric-value">${f.classes?.length||0}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">Imports</span><span class="metric-value">${f.imports?.length||0}</span></div>`;
+        h += `<div class="metric-row"><span class="metric-label">Exports</span><span class="metric-value">${f.exports?.length||0}</span></div>`;
+        if (f.event_listeners?.length) h += `<div class="metric-row"><span class="metric-label">Event listeners</span><span class="metric-value">${f.event_listeners.join(', ')}</span></div>`;
+        if (f.fetch_calls?.length) h += `<div class="metric-row"><span class="metric-label">Fetch calls</span><span class="metric-value warn">${f.fetch_calls.join(', ')}</span></div>`;
+        if (f.api_endpoints?.length) h += `<div class="metric-row"><span class="metric-label">Endpoints API</span><span class="metric-value accent">${f.api_endpoints.join(', ')}</span></div>`;
+      }
+      h += `</div>`;
+    });
+    $('files-panel').innerHTML = h;
+  },
+
+  // ── Mobile helpers ──────────────────────────────────────
+  toggleSidebar() {
+    const sb = $('sidebar');
+    const ov = $('sidebar-overlay');
+    if (!sb) return;
+    const open = sb.classList.toggle('open');
+    if (ov) ov.classList.toggle('show', open);
+  },
+  closeDetail() {
+    const el = $('detail');
+    if (el) el.classList.remove('open');
+  },
+  openDetail() {
+    if (window.innerWidth < 768) {
+      const el = $('detail');
+      if (el) el.classList.add('open');
+    }
   },
 };
 
@@ -2290,6 +2291,33 @@ const Graph = {
         ctx.textAlign='center'; ctx.fillText(node.label||id,p.x,p.y-rad-3/this.scale);
       }
     });
+    
+    // Runtime Overlay
+    if (this._rtActiveNodes?.size) {
+      for (const [id, p] of Object.entries(this.pos)) {
+        if (!this._rtActiveNodes.has(id)) continue;
+        const node = this.nodes[id]; if (!node) continue;
+        const r = (node.type==='file'?9:6)/this.scale*2 + 6/this.scale;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+        ctx.strokeStyle = 'rgba(52,211,153,0.7)'; ctx.lineWidth = 2/this.scale; ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x, p.y, 3/this.scale, 0, Math.PI*2);
+        ctx.fillStyle = '#34d399'; ctx.fill();
+      }
+    }
+
+    // Heat Map Overlay
+    if (HeatMap._enabled) {
+      for (const [id, p] of Object.entries(this.pos)) {
+        const alpha = HeatMap.getAlpha(id);
+        if (alpha === null || alpha < 0.05) continue;
+        const node = this.nodes[id]; if (!node) continue;
+        const r = (node.type === 'file' ? 9 : 6) / this.scale * 2;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r + 4/this.scale, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(251,191,36,${(alpha * 0.8).toFixed(2)})`;
+        ctx.lineWidth = 2/this.scale; ctx.stroke();
+      }
+    }
+
     ctx.globalAlpha=1; ctx.restore();
   },
 
@@ -2355,38 +2383,6 @@ const Graph = {
   },
 };
 
-// ── Node detail ────────────────────────────────────────────────
-UI.showNodeDetail = function(id, node) {
-  if (!node) {
-    document.getElementById("detail-title").textContent = "Detalle";
-    document.getElementById("detail-body").innerHTML = '<div class="empty">Nodo no encontrado</div>';
-    return;
-  }
-  document.getElementById("detail-title").textContent = node.label || id;
-  const ei    = Graph.edges.filter(e => e.to   === id).length;
-  const eo    = Graph.edges.filter(e => e.from === id).length;
-  const calls = Graph.edges.filter(e => e.to   === id && e.relation === "CALLS").length;
-  let h = `<div class="card">
-    <div class="metric-row"><span class="metric-label">Tipo</span><span class="metric-value">${node.type}</span></div>
-    <div class="metric-row"><span class="metric-label">Entradas</span><span class="metric-value">${ei}</span></div>
-    <div class="metric-row"><span class="metric-label">Salidas</span><span class="metric-value">${eo}</span></div>
-    <div class="metric-row"><span class="metric-label">Calls entrantes</span>
-      <span class="metric-value ${calls===0&&node.type==="function"?"err":""}">${calls}</span></div>
-  </div>`;
-  if (node.decorators?.length) {
-    h += `<div class="sec-hdr">Decoradores</div>`;
-    node.decorators.forEach(d => { h += `<div class="import-row">@${d}</div>`; });
-  }
-  if (node.inherits?.length) {
-    h += `<div class="sec-hdr">Herencia</div>`;
-    node.inherits.forEach(i => { h += `<div class="import-row">← ${i}</div>`; });
-  }
-  if (node.type === "file" && node.path) {
-    h += `<br/><button class="btn" style="width:100%" onclick="UI.selectFile('${CSS.escape(node.path)}')">Ver detalle completo</button>`;
-  }
-  document.getElementById("detail-body").innerHTML = h;
-  if (window.innerWidth < 768) UI.openDetail();
-}
 // ════════════════════════════════════════════════
 // AI CHANGE IMPACT ENGINE
 // ════════════════════════════════════════════════
@@ -2680,148 +2676,6 @@ window.fetch = function(url, opts = {}) {
   return _origFetch(url, opts);
 };
 
-
-// ── Mobile helpers ──────────────────────────────────────
-UI.toggleSidebar = function() {
-  const sb = document.getElementById("sidebar");
-  const ov = document.getElementById("sidebar-overlay");
-  if (!sb) return;
-  const open = sb.classList.toggle("open");
-  if (ov) ov.classList.toggle("show", open);
-};
-UI.closeDetail = function() {
-  const el = document.getElementById("detail");
-  if (el) el.classList.remove("open");
-};
-UI.openDetail = function() {
-  if (window.innerWidth < 768) {
-    const el = document.getElementById("detail");
-    if (el) el.classList.add("open");
-  }
-};
-// -- UI.renderTrace: local-first (no external API call) --
-UI.renderTrace = async function(path) {
-  const tp = document.getElementById("trace-panel");
-  if (!State.analysis) {
-    tp.innerHTML = '<div class="empty">Carg\u00e1 un repositorio primero.</div>';
-    return;
-  }
-  tp.innerHTML = '<div class="empty">Cargando trazabilidad\u2026</div>';
-  try {
-    const data   = State.analysis;
-    const file   = data.files.find(f => f.path === path);
-    if (!file) throw new Error("Archivo no encontrado");
-    const struct = data.structure?.[path] || { classes: {}, functions: [] };
-    const deps   = data.dependencies?.[path] || { all: [], internal: [], external: [] };
-    const base   = file.name.replace(/\.py$/, "");
-    const ups    = [];
-    for (const [fp, dep] of Object.entries(data.dependencies || {})) {
-      if (fp !== path && (dep.internal || []).includes(base)) ups.push(fp);
-    }
-    const nCls = Object.keys(struct.classes || {}).length;
-    const nFn  = (struct.functions || []).length;
-    let h = '<div class="sec-hdr" style="margin-top:0">\ud83d\udcc4 ' + file.name + '</div>'
-          + '<div class="stats-grid">'
-          + '<div class="stat-box"><div class="stat-num">' + nCls + '</div><div class="stat-lbl">Clases</div></div>'
-          + '<div class="stat-box"><div class="stat-num">' + nFn + '</div><div class="stat-lbl">Funciones</div></div>'
-          + '<div class="stat-box"><div class="stat-num" style="color:' + (ups.length > 0 ? "var(--accent4)" : "var(--muted)") + '">' + ups.length + '</div><div class="stat-lbl">Upstream</div></div>'
-          + '</div>';
-    if (ups.length) {
-      h += '<div class="sec-hdr"><span style="color:var(--accent4)">\u2191 UPSTREAM</span><span style="color:var(--muted);font-weight:400"> ('  + ups.length + ')</span></div>';
-      ups.forEach(fp => {
-        const fn = fp.split("/").pop();
-        const ep = CSS.escape(fp);
-        h += '<div style="background:rgba(251,146,60,.05);border:1px solid rgba(251,146,60,.15);border-radius:6px;margin-bottom:6px">'
-           + '<div class="import-row" style="cursor:pointer;padding:7px 10px" onclick="UI.selectFile(\''  + ep + '\')">'  
-           + '<span style="color:var(--accent4);font-size:10px;padding:1px 6px;border-radius:3px;background:rgba(251,146,60,.12);flex-shrink:0;font-weight:600">upstream</span>'
-           + '<span style="font-weight:600;color:var(--text)">' + fn + '</span></div></div>';
-      });
-    } else {
-      h += '<div class="sec-hdr"><span style="color:var(--accent4)">\u2191 UPSTREAM</span></div>'
-         + '<div style="color:var(--muted);font-size:11px;padding:6px 0 12px">Ning\u00fan archivo importa este \u2014 punto de entrada o script ra\u00edz.</div>';
-    }
-    if (deps.internal?.length) {
-      h += '<div class="sec-hdr"><span style="color:var(--accent2)">\u2193 DOWNSTREAM interno</span> (' + deps.internal.length + ')</div>';
-      deps.internal.forEach(m => { h += '<div class="import-row"><span class="import-type int">interno</span><span>' + m + '</span></div>'; });
-    }
-    if (deps.external?.length) {
-      h += '<div class="sec-hdr"><span style="color:var(--dim)">\u2193 DOWNSTREAM externo</span> (' + deps.external.length + ')</div>';
-      deps.external.forEach(m => { h += '<div class="import-row"><span class="import-type ext">externo</span><span>' + m + '</span></div>'; });
-    }
-    const cls = Object.entries(struct.classes || {});
-    const fns = struct.functions || [];
-    if (cls.length || fns.length) {
-      h += '<div class="sec-hdr">Estructura interna</div>';
-      cls.forEach(([cn, cd]) => {
-        h += '<div class="tree-node-hdr"><span class="tree-icon" style="color:var(--n-class)">\u29e1</span><span class="tree-label">' + cn + '</span></div>';
-        (cd.methods || []).forEach(m => {
-          const mn = typeof m === "string" ? m : m.name;
-          h += '<div class="tree-node-hdr" style="padding-left:16px"><span class="tree-icon" style="color:var(--n-fn)">\u0192</span><span class="tree-label">' + mn + '()</span></div>';
-        });
-      });
-      fns.forEach(fn => {
-        const nm = typeof fn === "string" ? fn : fn.name;
-        h += '<div class="tree-node-hdr"><span class="tree-icon" style="color:var(--accent4)">\u0192</span><span class="tree-label">' + nm + '()</span></div>';
-      });
-    }
-    tp.innerHTML = h;
-  } catch(e) {
-    document.getElementById("trace-panel").innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
-  }
-};
-
-// Auto-open detail on file select (mobile)
-const _origSelectFile = UI.selectFile.bind(UI);
-UI.selectFile = function(pathEscaped) {
-  _origSelectFile(pathEscaped);
-  UI.openDetail();
-};
-
-// ════════════════════════════════════════════════
-// WEB PROJECT — Files Tab
-// ════════════════════════════════════════════════
-UI.renderWebFilesTab = function(data) {
-  const s = data.summary;
-  let h = `<div class="stats-grid">
-    <div class="stat-box"><div class="stat-num">${s.html_files||0}</div><div class="stat-lbl">HTML</div></div>
-    <div class="stat-box"><div class="stat-num">${s.css_files||0}</div><div class="stat-lbl">CSS</div></div>
-    <div class="stat-box"><div class="stat-num">${s.js_files||0}</div><div class="stat-lbl">JS/TS</div></div>
-  </div>`;
-  (data.files||[]).forEach(f => {
-    const typeIcon = {html:'🌐',css:'🎨',js:'⚡',ts:'⚡'}[f.type]||'📄';
-    const typeColor = {html:'var(--accent)',css:'var(--accent3)',js:'var(--warn)'}[f.type]||'var(--dim)';
-    h += `<div class="card">
-      <div class="card-title" style="color:${typeColor}">${typeIcon} ${f.name} <span class="mode-badge web">${f.type.toUpperCase()}</span></div>`;
-    if (f.type === 'html') {
-      if (f.title) h += `<div class="metric-row"><span class="metric-label">Título</span><span class="metric-value" style="color:var(--text)">${f.title}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">Scripts externos</span><span class="metric-value accent">${f.scripts}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">Stylesheets</span><span class="metric-value accent">${f.stylesheets}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">IDs únicos</span><span class="metric-value">${f.ids}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">Clases CSS usadas</span><span class="metric-value">${f.classes_count}</span></div>`;
-      if (f.forms) h += `<div class="metric-row"><span class="metric-label">Formularios</span><span class="metric-value">${f.forms}</span></div>`;
-      if (f.custom_elements?.length) h += `<div class="metric-row"><span class="metric-label">Web Components</span><span class="metric-value accent">${f.custom_elements.join(', ')}</span></div>`;
-    } else if (f.type === 'css') {
-      h += `<div class="metric-row"><span class="metric-label">Reglas CSS</span><span class="metric-value accent">${f.rule_count}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">Variables CSS</span><span class="metric-value">${f.variables}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">Media queries</span><span class="metric-value">${f.media_queries}</span></div>`;
-      if (f.keyframes?.length) h += `<div class="metric-row"><span class="metric-label">Animaciones</span><span class="metric-value">${f.keyframes.join(', ')}</span></div>`;
-      if (f.imports?.length) h += `<div class="metric-row"><span class="metric-label">@imports</span><span class="metric-value">${f.imports.join(', ')}</span></div>`;
-    } else if (f.type === 'js') {
-      h += `<div class="metric-row"><span class="metric-label">Funciones</span><span class="metric-value accent">${f.functions?.length||0}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">Clases JS</span><span class="metric-value">${f.classes?.length||0}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">Imports</span><span class="metric-value">${f.imports?.length||0}</span></div>`;
-      h += `<div class="metric-row"><span class="metric-label">Exports</span><span class="metric-value">${f.exports?.length||0}</span></div>`;
-      if (f.event_listeners?.length) h += `<div class="metric-row"><span class="metric-label">Event listeners</span><span class="metric-value">${f.event_listeners.join(', ')}</span></div>`;
-      if (f.fetch_calls?.length) h += `<div class="metric-row"><span class="metric-label">Fetch calls</span><span class="metric-value warn">${f.fetch_calls.join(', ')}</span></div>`;
-      if (f.api_endpoints?.length) h += `<div class="metric-row"><span class="metric-label">Endpoints API</span><span class="metric-value accent">${f.api_endpoints.join(', ')}</span></div>`;
-    }
-    h += `</div>`;
-  });
-  $('files-panel').innerHTML = h;
-};
-
-
-
 // ════════════════════════════════════════════════
 // RUNTIME ENGINE v4
 // ════════════════════════════════════════════════
@@ -2837,7 +2691,7 @@ const Runtime = {
   init(flowId) {
     this._flowId = flowId;
     this._mode   = 'static';
-    document.getElementById('runtime-bar').classList.add('show');
+    $('runtime-bar').classList.add('show');
     this._updateModeButtons();
   },
 
@@ -2850,13 +2704,13 @@ const Runtime = {
     const isLive   = mode === 'live';
 
     ['rt-prev','rt-next','rt-timeline','rt-frame-info','rt-payload'].forEach(id => {
-      const el = document.getElementById(id);
+      const el = $(id);
       if (el) el.style.display = isReplay ? '' : 'none';
     });
-    const cntEl = document.getElementById('rt-event-count');
+    const cntEl = $('rt-event-count');
     if (cntEl) cntEl.style.display = isLive ? '' : 'none';
 
-    const dot = document.getElementById('rt-live-dot');
+    const dot = $('rt-live-dot');
     dot.classList.toggle('pulsing', isLive);
 
     if (mode === 'static') {
@@ -2868,7 +2722,7 @@ const Runtime = {
 
   _updateModeButtons() {
     ['static','live','replay'].forEach(m => {
-      const btn = document.getElementById('rt-btn-' + m);
+      const btn = $('rt-btn-' + m);
       if (btn) btn.classList.toggle('active', this._mode === m);
     });
   },
@@ -2883,7 +2737,7 @@ const Runtime = {
         if (!r.ok) return;
         const d = await r.json();
         this._eventCount = d.active_nodes?.length || 0;
-        const cntEl = document.getElementById('rt-event-count');
+        const cntEl = $('rt-event-count');
         if (cntEl) cntEl.textContent = `${this._eventCount} nodos activos`;
         this._highlightActive(d.active_nodes || []);
       } catch(_) {}
@@ -2911,10 +2765,11 @@ const Runtime = {
       const d = await r.json();
       this._frames   = d.frames || [];
       this._frameIdx = 0;
-      const slider = document.getElementById('rt-timeline');
+      const slider = $('rt-timeline');
       slider.max   = Math.max(0, this._frames.length - 1);
       slider.value = 0;
       this._renderFrame(0);
+      MiniTimeline.build(this._frames);
     } catch(e) {
       UI.setStatus('Replay error: ' + e.message, 'err');
     } finally {
@@ -2940,15 +2795,15 @@ const Runtime = {
     if (!frame) return;
 
     // Update slider
-    const slider = document.getElementById('rt-timeline');
+    const slider = $('rt-timeline');
     slider.value = idx;
 
     // Frame counter
-    const info = document.getElementById('rt-frame-info');
+    const info = $('rt-frame-info');
     info.textContent = `${idx + 1} / ${this._frames.length}`;
 
     // Payload preview
-    const payEl = document.getElementById('rt-payload');
+    const payEl = $('rt-payload');
     payEl.textContent = frame.payload_preview || '';
 
     // Highlight active nodes on canvas
@@ -2958,8 +2813,14 @@ const Runtime = {
     Graph._applyFilters();
 
     // Step buttons
-    document.getElementById('rt-prev').disabled = idx === 0;
-    document.getElementById('rt-next').disabled = idx >= this._frames.length - 1;
+    $('rt-prev').disabled = idx === 0;
+    $('rt-next').disabled = idx >= this._frames.length - 1;
+
+    // Update mini-timeline cursor
+    MiniTimeline.setCursor(idx);
+
+    // Apply heat map
+    HeatMap.apply(frame.heat || {});
 
     // Detail panel: show event payload
     if (frame.event) {
@@ -2976,51 +2837,35 @@ const Runtime = {
           h += `<div class="metric-row"><span class="metric-label">${k}</span><span class="metric-value" style="word-break:break-all;font-size:10px">${String(v).slice(0,80)}</span></div>`;
         }
       }
+      
+      // Call stack & trail
+      if (frame.call_stack?.length) {
+        h += `<div class="sec-hdr">Call stack (${frame.stack_depth})</div><div class="call-stack-panel">`;
+        const stack = [...frame.call_stack].reverse();
+        stack.slice(0, 8).forEach((nid, i) => {
+          const lbl = nid.replace(/^(function:|method:|file:)/, '');
+          h += `<div class="call-stack-frame ${i === 0 ? 'top' : ''}">
+            <span class="stack-idx">${stack.length - i}</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lbl}</span>
+          </div>`;
+        });
+        h += '</div>';
+      }
+
+      if (frame.execution_path?.length > 1) {
+        h += `<div class="sec-hdr">Execution trail</div><div class="exec-trail">`;
+        frame.execution_path.slice(-8).forEach((nid, i, arr) => {
+          const lbl = nid.replace(/^(function:|method:|file:|dynamic:)/, '').slice(0, 20);
+          const isLatest = i === arr.length - 1;
+          h += `<span class="trail-node ${isLatest ? 'latest' : ''}">${lbl}</span>`;
+        });
+        h += '</div>';
+      }
+
       $('detail-body').innerHTML = h;
     }
   },
 };
-
-// ── Patch Graph._draw to overlay runtime highlights ──────
-const _origDraw = Graph._draw.bind(Graph);
-Graph._draw = function() {
-  _origDraw();
-  if (!Graph._rtActiveNodes?.size) return;
-  const ctx = this.ctx; if(!ctx) return;
-  ctx.save(); ctx.translate(this.ox,this.oy); ctx.scale(this.scale,this.scale);
-  for (const [id, p] of Object.entries(this.pos)) {
-    if (!Graph._rtActiveNodes.has(id)) continue;
-    const node = this.nodes[id]; if (!node) continue;
-    const r = (node.type==='file'?9:6)/this.scale*2 + 6/this.scale;
-    // Glow ring
-    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2);
-    ctx.strokeStyle = 'rgba(52,211,153,0.7)'; ctx.lineWidth = 2/this.scale; ctx.stroke();
-    // Pulse dot center
-    ctx.beginPath(); ctx.arc(p.x, p.y, 3/this.scale, 0, Math.PI*2);
-    ctx.fillStyle = '#34d399'; ctx.fill();
-  }
-  ctx.restore();
-};
-
-// Patch UI.onAnalysis to init Runtime with the new flow
-const _origOnAnalysis = UI.onAnalysis.bind(UI);
-UI.onAnalysis = function(data) {
-  _origOnAnalysis(data);
-  // Auto-create flow and attach analysis to backend (best-effort)
-  const flowId = 'flow-' + Date.now().toString(36);
-  State.currentFlowId = flowId;
-  fetch(`${API}/flows/${flowId}/attach`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...Auth.headers() },
-    body: JSON.stringify(data),
-  }).catch(() => {});
-  Runtime.init(flowId);
-};
-
-
-// ════════════════════════════════════════════════
-// RUNTIME v4 — Fase 2 extensions
-// ════════════════════════════════════════════════
 
 // ── MiniTimeline ─────────────────────────────────
 const MiniTimeline = {
@@ -3029,9 +2874,9 @@ const MiniTimeline = {
 
   build(frames) {
     this._frames = frames;
-    const track = document.getElementById('mt-track');
+    const track = $('mt-track');
     if (!frames.length) { track.innerHTML = ''; return; }
-    const mt = document.getElementById('mini-timeline');
+    const mt = $('mini-timeline');
     mt.classList.add('show');
     this._width = mt.offsetWidth;
 
@@ -3052,27 +2897,27 @@ const MiniTimeline = {
       const pct = e.offsetX / mt.offsetWidth;
       const idx = Math.round(pct * (frames.length - 1));
       Runtime.scrub(idx);
-      document.getElementById('rt-timeline').value = idx;
+      $('rt-timeline').value = idx;
     });
   },
 
   setCursor(frameIdx) {
     if (!this._frames.length) return;
     const pct = 100 * frameIdx / Math.max(this._frames.length - 1, 1);
-    document.getElementById('mt-cursor').style.left = pct.toFixed(2) + '%';
+    $('mt-cursor').style.left = pct.toFixed(2) + '%';
   },
 
   hover(idx, pct) {
     const f   = this._frames[idx];
     if (!f) return;
-    const tt  = document.getElementById('mt-tooltip');
+    const tt  = $('mt-tooltip');
     tt.style.display = 'block';
     tt.style.left    = pct.toFixed(1) + '%';
     tt.textContent   = f.payload_preview || f.event?.action || '';
   },
 
   unhover() {
-    document.getElementById('mt-tooltip').style.display = 'none';
+    $('mt-tooltip').style.display = 'none';
   },
 };
 
@@ -3111,7 +2956,7 @@ const Sessions = {
   },
 
   render() {
-    const panel = document.getElementById('sessions-panel');
+    const panel = $('sessions-panel');
     if (!this._sessions.length) {
       panel.innerHTML = '<div class="empty">No hay sesiones registradas aún.</div>';
       return;
@@ -3194,101 +3039,6 @@ const Sessions = {
     window.open(url + '?include_events=true&include_frames=true', '_blank');
   },
 };
-
-// ── Patch Runtime._renderFrame to show call stack + trail ─
-const _origRenderFrame = Runtime._renderFrame.bind(Runtime);
-Runtime._renderFrame = function(idx) {
-  _origRenderFrame(idx);
-  const frame = this._frames[idx];
-  if (!frame) return;
-
-  // Update mini-timeline cursor
-  MiniTimeline.setCursor(idx);
-
-  // Apply heat map
-  HeatMap.apply(frame.heat || {});
-
-  // Append call stack + execution trail to detail
-  const existing = $('detail-body').innerHTML;
-  let extra = '';
-
-  if (frame.call_stack?.length) {
-    extra += `<div class="sec-hdr">Call stack (${frame.stack_depth})</div>
-      <div class="call-stack-panel">`;
-    const stack = [...frame.call_stack].reverse(); // show top first
-    stack.slice(0, 8).forEach((nid, i) => {
-      const lbl = nid.replace(/^(function:|method:|file:)/, '');
-      extra += `<div class="call-stack-frame ${i === 0 ? 'top' : ''}">
-        <span class="stack-idx">${stack.length - i}</span>
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lbl}</span>
-      </div>`;
-    });
-    extra += '</div>';
-  }
-
-  if (frame.execution_path?.length > 1) {
-    extra += `<div class="sec-hdr">Execution trail</div><div class="exec-trail">`;
-    frame.execution_path.slice(-8).forEach((nid, i, arr) => {
-      const lbl = nid.replace(/^(function:|method:|file:|dynamic:)/, '').slice(0, 20);
-      const isLatest = i === arr.length - 1;
-      extra += `<span class="trail-node ${isLatest ? 'latest' : ''}">${lbl}</span>`;
-    });
-    extra += '</div>';
-  }
-
-  if (extra) $('detail-body').innerHTML = existing + extra;
-};
-
-// ── Patch Runtime._loadReplay to also build MiniTimeline ──
-const _origLoadReplay = Runtime._loadReplay.bind(Runtime);
-Runtime._loadReplay = async function() {
-  await _origLoadReplay();
-  if (this._frames.length) {
-    MiniTimeline.build(this._frames);
-  }
-};
-
-// ── Patch Graph._draw to overlay heat map ────────────────
-const _origDrawPhase1 = Graph._draw.bind(Graph);
-Graph._draw = function() {
-  _origDrawPhase1();
-  if (!HeatMap._enabled) return;
-  const ctx = this.ctx; if(!ctx) return;
-  ctx.save(); ctx.translate(this.ox, this.oy); ctx.scale(this.scale, this.scale);
-  for (const [id, p] of Object.entries(this.pos)) {
-    const alpha = HeatMap.getAlpha(id);
-    if (alpha === null || alpha < 0.05) continue;
-    const node = this.nodes[id]; if (!node) continue;
-    const r = (node.type === 'file' ? 9 : 6) / this.scale * 2;
-    // Heat ring — amber for hot nodes
-    ctx.beginPath(); ctx.arc(p.x, p.y, r + 4/this.scale, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(251,191,36,${(alpha * 0.8).toFixed(2)})`;
-    ctx.lineWidth = 2/this.scale; ctx.stroke();
-  }
-  ctx.restore();
-};
-
-// ── Patch UI.switchTab to load sessions ──────────────────
-const _origSwitchTab = UI.switchTab.bind(UI);
-UI.switchTab = function(tab) {
-  _origSwitchTab(tab);
-  if (tab === 'sessions') Sessions.load();
-};
-
-// ── Add Export button to Runtime bar ─────────────────────
-(function() {
-  const bar = document.getElementById('runtime-bar');
-  if (!bar) return;
-  const btn = document.createElement('button');
-  btn.className = 'rt-mode-btn';
-  btn.textContent = '⬇ Export';
-  btn.title = 'Exportar sesión como JSON';
-  btn.onclick = () => {
-    if (State.currentFlowId) Sessions.exportSession(State.currentFlowId);
-  };
-  bar.appendChild(btn);
-})();
-
 
 // ════════════════════════════════════════════════
 // AUDIT ENGINE — Fase 3
@@ -3485,7 +3235,7 @@ const Audit = {
   },
 
   toggleFinding(idx) {
-    const el = document.getElementById(`finding-${idx}`);
+    const el = $(`finding-${idx}`);
     if (el) el.classList.toggle('open');
   },
 
@@ -3525,8 +3275,8 @@ const Audit = {
   },
 
   async loadNodeTimeline(flowIdEscaped, nodeIdEscaped) {
-    const flowId  = flowIdEscaped.replace(/\/g, '');
-    const nodeId  = nodeIdEscaped.replace(/\/g, '');
+    const flowId  = flowIdEscaped.replace(/\\/g, '');
+    const nodeId  = nodeIdEscaped.replace(/\\/g, '');
     try {
       const r = await fetch(
         `${API}/flows/${encodeURIComponent(flowId)}/nodes/${encodeURIComponent(nodeId)}/timeline?limit=50`,
@@ -3605,35 +3355,6 @@ const Audit = {
   },
 };
 
-// Patch switchTab to load audit data
-const _origSwitchTabAudit = UI.switchTab.bind(UI);
-UI.switchTab = function(tab) {
-  _origSwitchTabAudit(tab);
-  if (tab === 'audit') Audit.loadSelects();
-};
-
-// Patch onAnalysis to set audit flow selector
-const _origOnAnalysisAudit = UI.onAnalysis.bind(UI);
-UI.onAnalysis = function(data) {
-  _origOnAnalysisAudit(data);
-  // Pre-fill audit flow selector with current flow
-  setTimeout(() => {
-    const sel = $('audit-flow');
-    if (sel && State.currentFlowId) {
-      // Add option if not present
-      if (![...sel.options].some(o => o.value === State.currentFlowId)) {
-        sel.innerHTML += `<option value="${State.currentFlowId}">${State.currentFlowId} (actual)</option>`;
-      }
-      sel.value = State.currentFlowId;
-      $('audit-run-btn').disabled = false;
-    }
-  }, 500);
-};
-
-// ════════════════════════════════════════════════
-// INIT
-// ════════════════════════════════════════════════
-
 // ==============================================
 // INSTRUMENTER — Fase 4
 // ==============================================
@@ -3647,26 +3368,26 @@ const Instrument = {
   setMethod(m) {
     this._method = m;
     ['file','zip','paste'].forEach(mm => {
-      const btn = document.getElementById('instr-m-' + mm);
+      const btn = $(`instr-m-${mm}`);
       if (btn) btn.classList.toggle('active', mm === m);
     });
     const isZip   = m === 'zip';
     const isPaste = m === 'paste';
-    const drop    = document.getElementById('instr-drop');
-    const paste   = document.getElementById('instr-paste-area');
+    const drop    = $('instr-drop');
+    const paste   = $('instr-paste-area');
     if (drop)  drop.style.display  = isPaste ? 'none' : 'block';
     if (paste) paste.style.display = isPaste ? 'block' : 'none';
-    const fi = document.getElementById('instr-file-input');
+    const fi = $('instr-file-input');
     if (fi) fi.accept = isZip ? '.zip' : '.py';
-    const dt = document.getElementById('instr-drop-title');
-    const ds = document.getElementById('instr-drop-sub');
+    const dt = $('instr-drop-title');
+    const ds = $('instr-drop-sub');
     if (dt) dt.textContent = isZip ? 'Arrastre su .zip aqui' : 'Arrastre archivos .py aqui';
     if (ds) ds.textContent = isZip ? 'o haga clic para seleccionar un .zip' : 'o haga clic para seleccionar archivos Python';
   },
 
-  onDragOver(e)  { e.preventDefault(); document.getElementById('instr-drop').classList.add('drag'); },
-  onDragLeave()  { document.getElementById('instr-drop').classList.remove('drag'); },
-  onDrop(e)      { e.preventDefault(); document.getElementById('instr-drop').classList.remove('drag'); this.handleFiles(e.dataTransfer.files); },
+  onDragOver(e)  { e.preventDefault(); $('instr-drop').classList.add('drag'); },
+  onDragLeave()  { $('instr-drop').classList.remove('drag'); },
+  onDrop(e)      { e.preventDefault(); $('instr-drop').classList.remove('drag'); this.handleFiles(e.dataTransfer.files); },
   onFileInput(e) { this.handleFiles(e.target.files); },
 
   handleFiles(fileList) {
@@ -3694,30 +3415,29 @@ const Instrument = {
   async _handleZip(file) {
     this._isZip = true;
     this._zipBytes = await file.arrayBuffer();
-    document.getElementById('instr-orig-stats').textContent = file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
-    document.getElementById('instr-upload-zone').style.display = 'none';
-    document.getElementById('instr-editor').style.display = 'block';
-    document.getElementById('instr-orig-code').textContent = 'ZIP cargado: ' + file.name;
+    $('instr-orig-stats').textContent = file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
+    $('instr-upload-zone').style.display = 'none';
+    $('instr-editor').style.display = 'block';
+    $('instr-orig-code').textContent = 'ZIP cargado: ' + file.name;
     await this.previewZip();
   },
 
   _showOriginal(filename) {
     const src = this._files[filename] || '';
-    document.getElementById('instr-upload-zone').style.display = 'none';
-    document.getElementById('instr-editor').style.display = 'block';
-    const lines = src.split('
-');
+    $('instr-upload-zone').style.display = 'none';
+    $('instr-editor').style.display = 'block';
+    const lines = src.split('\n');
     let html = '';
     lines.forEach((line, i) => {
       html += '<div class="code-line context"><span class="code-ln">' + (i+1) + '</span><span class="code-txt">' + _escHtml(line) + '</span></div>';
     });
-    document.getElementById('instr-orig-code').innerHTML = html;
-    document.getElementById('instr-stats').style.display = 'flex';
-    document.getElementById('instr-orig-stats').textContent = lines.length + ' lineas';
+    $('instr-orig-code').innerHTML = html;
+    $('instr-stats').style.display = 'flex';
+    $('instr-orig-stats').textContent = lines.length + ' lineas';
   },
 
   async previewPaste() {
-    const src = document.getElementById('instr-paste-input').value.trim();
+    const src = $('instr-paste-input').value.trim();
     if (!src) return;
     this._files = { 'module.py': src };
     this._isZip = false;
@@ -3730,9 +3450,9 @@ const Instrument = {
     const source   = this._files[filename];
     if (!source) return;
 
-    const flowId   = document.getElementById('instr-flow-id').value.trim() || 'default';
-    const endpoint = document.getElementById('instr-endpoint').value.trim() || '';
-    const prevEl   = document.getElementById('instr-preview');
+    const flowId   = $('instr-flow-id').value.trim() || 'default';
+    const endpoint = $('instr-endpoint').value.trim() || '';
+    const prevEl   = $('instr-preview');
     prevEl.innerHTML = '<div class="empty" style="padding:20px">Generando previa…</div>';
 
     try {
@@ -3751,10 +3471,10 @@ const Instrument = {
   },
 
   async previewZip() {
-    const prevEl = document.getElementById('instr-preview');
+    const prevEl = $('instr-preview');
     prevEl.innerHTML = '<div class="empty" style="padding:20px">Instrumentando ZIP…</div>';
-    const flowId   = document.getElementById('instr-flow-id').value.trim() || 'default';
-    const endpoint = document.getElementById('instr-endpoint').value.trim() || '';
+    const flowId   = $('instr-flow-id').value.trim() || 'default';
+    const endpoint = $('instr-endpoint').value.trim() || '';
     try {
       const fd = new FormData();
       fd.append('file', new Blob([this._zipBytes], {type:'application/zip'}), 'project.zip');
@@ -3779,17 +3499,17 @@ const Instrument = {
         + '<div class="stat-num" style="color:var(--accent3)">' + nFns + '</div>'
         + '<div class="stat-lbl">Funciones instrumentadas</div></div>'
         + '</div>';
-      document.getElementById('instr-dl-info').textContent = nFiles + ' archivos, ' + nFns + ' funciones';
-      const dlBar = document.getElementById('instr-download-bar');
+      $('instr-dl-info').textContent = nFiles + ' archivos, ' + nFns + ' funciones';
+      const dlBar = $('instr-download-bar');
       dlBar.classList.add('show');
-      document.getElementById('instr-apply-btn').style.display = '';
+      $('instr-apply-btn').style.display = '';
     } catch(e) {
       prevEl.innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
     }
   },
 
   _renderPreview(filename, d) {
-    const prevEl = document.getElementById('instr-preview');
+    const prevEl = $('instr-preview');
     if (d.parse_error) {
       prevEl.innerHTML = '<div class="empty" style="padding:20px;color:var(--accent5)">Error de sintaxis — no se puede instrumentar este archivo.</div>';
       return;
@@ -3805,17 +3525,17 @@ const Instrument = {
 
     const addedLines = d.added_lines || 0;
     const fnCount    = d.functions_instrumented || 0;
-    document.getElementById('instr-prev-stats').textContent = fnCount + ' funciones · +' + addedLines + ' lineas';
-    document.getElementById('instr-stats').style.display = 'flex';
-    document.getElementById('instr-stats').innerHTML =
+    $('instr-prev-stats').textContent = fnCount + ' funciones · +' + addedLines + ' lineas';
+    $('instr-stats').style.display = 'flex';
+    $('instr-stats').innerHTML =
       '<div class="instr-stat"><span class="instr-stat-val">' + fnCount + '</span><span class="instr-stat-lbl"> funciones instrumentadas</span></div>' +
       '<div class="instr-stat"><span class="instr-stat-val">+' + addedLines + '</span><span class="instr-stat-lbl"> lineas agregadas</span></div>' +
       '<div class="instr-stat"><span class="instr-stat-val">' + d.instrumented_lines + '</span><span class="instr-stat-lbl"> lineas totales</span></div>';
 
-    const dlBar = document.getElementById('instr-download-bar');
+    const dlBar = $('instr-download-bar');
     dlBar.classList.add('show');
-    document.getElementById('instr-dl-info').textContent = fnCount + ' funciones en ' + Object.keys(this._files).length + ' archivo(s)';
-    document.getElementById('instr-apply-btn').style.display = '';
+    $('instr-dl-info').textContent = fnCount + ' funciones en ' + Object.keys(this._files).length + ' archivo(s)';
+    $('instr-apply-btn').style.display = '';
   },
 
   async applyAndDownload() {
@@ -3826,8 +3546,8 @@ const Instrument = {
       a.click();
       return;
     }
-    const flowId   = document.getElementById('instr-flow-id').value.trim() || 'default';
-    const endpoint = document.getElementById('instr-endpoint').value.trim() || '';
+    const flowId   = $('instr-flow-id').value.trim() || 'default';
+    const endpoint = $('instr-endpoint').value.trim() || '';
     const filename = Object.keys(this._files)[0];
     const source   = this._files[filename];
     if (!source) return;
@@ -3856,12 +3576,6 @@ const Instrument = {
 function _escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-
-// Patch switchTab to not break on new tab
-const _origSwitchTabI = UI.switchTab.bind(UI);
-UI.switchTab = function(tab) {
-  _origSwitchTabI(tab);
-};
 
 // =================================================
 // GLOBAL EXPOSER -- Fix onclick handlers in HTML
