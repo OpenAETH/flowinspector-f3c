@@ -834,6 +834,48 @@ body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);font
   .audit-input,.audit-select{width:100%}
 }
 
+
+/* === FASE 4 - Instrumenter tab === */
+#instrument-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#instr-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+#instr-body{flex:1;display:flex;overflow:hidden;gap:0}
+#instr-left{flex:1;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)}
+#instr-right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#instr-editor{flex:1;overflow:auto;padding:0}
+#instr-preview{flex:1;overflow:auto;padding:0}
+.instr-code-hdr{padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);
+  font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);
+  display:flex;align-items:center;gap:10px;flex-shrink:0}
+.instr-code-hdr span{color:var(--accent)}
+.code-pane{font-family:'DM Mono',monospace;font-size:11px;line-height:1.6;
+  padding:12px;color:var(--text);white-space:pre;overflow-x:auto;min-height:200px}
+.code-line{display:flex;gap:10px;padding:0 4px}
+.code-line:hover{background:var(--bg3)}
+.code-line.added{background:rgba(52,211,153,.07);border-left:2px solid var(--accent3)}
+.code-line.context{border-left:2px solid transparent}
+.code-ln{color:var(--muted);font-size:10px;user-select:none;min-width:32px;text-align:right;flex-shrink:0}
+.code-txt{flex:1}
+.instr-stats{display:flex;gap:12px;padding:8px 14px;background:var(--bg3);border-top:1px solid var(--border);
+  flex-shrink:0;font-size:10px;flex-wrap:wrap}
+.instr-stat{display:flex;align-items:center;gap:4px}
+.instr-stat-val{color:var(--accent3);font-weight:600}
+.instr-stat-lbl{color:var(--muted)}
+#instr-upload-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  flex:1;gap:12px;padding:24px}
+.instr-drop{width:100%;max-width:460px;border:2px dashed var(--border2);border-radius:10px;
+  padding:32px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg2)}
+.instr-drop:hover,.instr-drop.drag{border-color:var(--accent3);background:var(--bg3)}
+.instr-methods{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.instr-method-btn{padding:6px 14px;border:1px solid var(--border2);border-radius:20px;
+  cursor:pointer;font-size:11px;color:var(--dim);background:var(--bg2);font-family:inherit;
+  transition:all .12s}
+.instr-method-btn:hover{border-color:var(--accent3);color:var(--accent3)}
+.instr-method-btn.active{border-color:var(--accent3);color:var(--accent3);background:rgba(52,211,153,.08)}
+#instr-download-bar{display:none;align-items:center;gap:10px;padding:8px 14px;
+  background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
+#instr-download-bar.show{display:flex}
+
 </style>
 </head>
 <body>
@@ -900,6 +942,7 @@ body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);font
         <button class="tab ai-tab" onclick="UI.switchTab('ai')" data-tab="ai">◆ Change Impact</button>
         <button class="tab" onclick="UI.switchTab('sessions')" data-tab="sessions">⬡ Sesiones</button>
         <button class="tab" onclick="UI.switchTab('audit')" data-tab="audit">⚑ Auditoría</button>
+        <button class="tab" onclick="UI.switchTab('instrument')" data-tab="instrument">⚙ Instrumentar</button>
       </div>
 
       <!-- GRAPH TAB -->
@@ -1045,6 +1088,71 @@ body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);font
         </div>
       </div>
 
+
+      <!-- INSTRUMENT TAB -->
+      <div class="tab-panel" id="tab-instrument">
+        <div id="instrument-panel">
+          <div id="instr-toolbar">
+            <span style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Flow ID</span>
+            <input class="audit-input" id="instr-flow-id" placeholder="mi-proyecto" style="width:130px" value="default"/>
+            <span style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Endpoint</span>
+            <input class="audit-input" id="instr-endpoint" placeholder="auto" style="width:220px"/>
+            <span style="color:var(--muted);font-size:10px">|</span>
+            <button class="btn" onclick="Instrument.downloadTracker()" style="padding:4px 10px;font-size:10px">↓ tracker.py</button>
+            <button class="btn" onclick="Instrument.downloadProxy(false)" style="padding:4px 10px;font-size:10px">↓ proxy.js</button>
+            <button class="btn" onclick="Instrument.downloadProxy(true)" style="padding:4px 10px;font-size:10px">↓ proxy-advanced.js</button>
+          </div>
+          <div id="instr-body">
+            <div id="instr-left">
+              <div class="instr-code-hdr">
+                <span>Original</span>
+                <span id="instr-orig-stats" style="font-weight:400"></span>
+              </div>
+              <div id="instr-upload-zone">
+                <div class="instr-methods">
+                  <button class="instr-method-btn active" id="instr-m-file" onclick="Instrument.setMethod('file')">Archivos .py</button>
+                  <button class="instr-method-btn" id="instr-m-zip" onclick="Instrument.setMethod('zip')">ZIP completo</button>
+                  <button class="instr-method-btn" id="instr-m-paste" onclick="Instrument.setMethod('paste')">Pegar código</button>
+                </div>
+                <div class="instr-drop" id="instr-drop"
+                     onclick="document.getElementById('instr-file-input').click()"
+                     ondragover="Instrument.onDragOver(event)"
+                     ondrop="Instrument.onDrop(event)"
+                     ondragleave="Instrument.onDragLeave()">
+                  <div style="font-size:32px;opacity:.5;margin-bottom:8px">⚙</div>
+                  <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--accent3);margin-bottom:4px" id="instr-drop-title">Arrastrá archivos .py aquí</div>
+                  <div style="color:var(--dim);font-size:11px" id="instr-drop-sub">o hacé clic para seleccionar</div>
+                </div>
+                <div id="instr-paste-area" style="display:none;width:100%;max-width:460px">
+                  <textarea id="instr-paste-input" style="width:100%;height:140px;background:var(--bg2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:10px;font-family:inherit;font-size:11px;resize:vertical;outline:none" placeholder="Pegá código Python aquí…"></textarea>
+                  <button class="btn primary" style="margin-top:8px;width:100%" onclick="Instrument.previewPaste()">▶ Previsualizar</button>
+                </div>
+                <input type="file" id="instr-file-input" multiple accept=".py,.zip" onchange="Instrument.onFileInput(event)" style="display:none"/>
+              </div>
+              <div id="instr-editor" style="display:none">
+                <div class="code-pane" id="instr-orig-code"></div>
+              </div>
+              <div class="instr-stats" id="instr-stats" style="display:none"></div>
+            </div>
+            <div id="instr-right">
+              <div class="instr-code-hdr">
+                <span>Instrumentado</span>
+                <span id="instr-prev-stats" style="font-weight:400;color:var(--accent3)"></span>
+                <button class="btn" id="instr-apply-btn" style="display:none;padding:3px 10px;font-size:10px;margin-left:auto" onclick="Instrument.applyAndDownload()">↓ Descargar</button>
+              </div>
+              <div id="instr-preview">
+                <div class="empty" style="padding:32px">Cargá un archivo para ver la previa de instrumentación.</div>
+              </div>
+            </div>
+          </div>
+          <div id="instr-download-bar">
+            <span style="font-size:11px;color:var(--accent3)">&#x2713; Instrumentación lista</span>
+            <span id="instr-dl-info" style="font-size:10px;color:var(--muted)"></span>
+            <button class="btn primary" onclick="Instrument.applyAndDownload()" style="margin-left:auto;padding:5px 14px;font-size:11px">↓ Descargar instrumentado</button>
+          </div>
+        </div>
+      </div>
+
       <!-- AI CHANGE IMPACT TAB -->
       <div class="tab-panel" id="tab-ai">
         <div id="ai-panel">
@@ -1134,7 +1242,7 @@ const Auth = {
     if (!r || !r.ok) return; // network error → proceed anyway
     const data = await r.json();
     if (!data.required) {
-      const el = $('login-overlay'); if (el) el.style.display = 'none';
+      $('login-overlay').style.display = 'none';
       return;
     }
     if (this._key) {
@@ -1144,25 +1252,22 @@ const Auth = {
         body: JSON.stringify({ key: this._key })
       }).catch(() => null);
       if (vr && vr.ok) {
-        const el = $('login-overlay'); if (el) el.style.display = 'none';
+        $('login-overlay').style.display = 'none';
         return;
       }
       this._key = ''; sessionStorage.removeItem('fi_access_key');
     }
     // Show login screen
-    const el = $('login-overlay'); if (el) el.style.display = 'flex';
-    const keyInput = $('login-key');
-    if (keyInput) {
-      keyInput.addEventListener('keydown', e => { if (e.key === 'Enter') Auth.login(); });
-      setTimeout(() => keyInput.focus(), 100);
-    }
+    $('login-overlay').style.display = 'flex';
+    $('login-key').addEventListener('keydown', e => { if (e.key === 'Enter') Auth.login(); });
+    setTimeout(() => $('login-key').focus(), 100);
   },
 
   async login() {
     const key = $('login-key').value.trim();
     if (!key) return;
-    const loginBtn = $('login-btn'); if (loginBtn) loginBtn.disabled = true;
-    const loginErr = $('login-error'); if (loginErr) loginErr.textContent = '';
+    $('login-btn').disabled = true;
+    $('login-error').textContent = '';
     try {
       const r = await fetch(`${API}/api/login`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1174,15 +1279,27 @@ const Auth = {
       }
       this._key = key;
       sessionStorage.setItem('fi_access_key', key);
-      const el = $('login-overlay'); if (el) el.style.display = 'none';
+      $('login-overlay').style.display = 'none';
     } catch(e) {
-      const loginErr = $('login-error'); if (loginErr) loginErr.textContent = e.message;
-      const keyInput = $('login-key'); if (keyInput) keyInput.select();
+      $('login-error').textContent = e.message;
+      $('login-key').select();
     } finally {
-      const loginBtn = $('login-btn'); if (loginBtn) loginBtn.disabled = false;
+      $('login-btn').disabled = false;
     }
   },
 };
+
+
+  async uploadWebZip(file) {
+    UI.showLoading('Analizando ZIP web…');
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch(`${API}/analyze/web-zip`, { method:'POST', headers: Auth.headers(), body:fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Error');
+      UI.onAnalysis(data);
+    } catch(e) { UI.onError(e.message); }
+  },
 
 const State = { analysis: null, selectedFile: null, uploadMode: 'file' };
 
@@ -1203,19 +1320,17 @@ const Tooltip = {
 
   showForNode(nodeId, nodeData, analysis, x, y) {
     clearTimeout(this._timer);
-    if (!nodeData || !this._tt) return;
+    if (!nodeData) return;
 
     const type  = nodeData.type || 'module';
     const label = nodeData.label || nodeId;
 
     // Header
-    const ttIcon = $('tt-icon'); if (ttIcon) ttIcon.textContent = this._icons[type] || '○';
-    const ttTitle = $('tt-title'); if (ttTitle) ttTitle.textContent = label;
+    $('tt-icon').textContent = this._icons[type] || '○';
+    $('tt-title').textContent = label;
     const badge = $('tt-type-badge');
-    if (badge) {
-      badge.textContent = type;
-      badge.className = `tt-type ${type}`;
-    }
+    badge.textContent = type;
+    badge.className = `tt-type ${type}`;
 
     // Body
     let body = '';
@@ -1284,8 +1399,8 @@ const Tooltip = {
       body += `<div class="tt-row"><span class="tt-label">Aristas salida</span><span class="tt-val">${outEdges.length}</span></div>`;
     }
 
-    const ttBody = $('tt-body'); if (ttBody) ttBody.innerHTML = body;
-    const ttHint = $('tt-hint'); if (ttHint) ttHint.textContent = type==='file' ? 'doble clic para seleccionar' : 'clic para ver detalle';
+    $('tt-body').innerHTML = body;
+    $('tt-hint').textContent = type==='file' ? 'doble clic para seleccionar' : 'clic para ver detalle';
 
     this._pos(x, y);
     this._tt.style.display = 'block';
@@ -1293,16 +1408,12 @@ const Tooltip = {
 
   showForElement(el, text, detail='') {
     clearTimeout(this._timer);
-    if (!this._tt) return;
-    const ttIcon = $('tt-icon'); if (ttIcon) ttIcon.textContent = 'ℹ';
-    const ttTitle = $('tt-title'); if (ttTitle) ttTitle.textContent = text;
-    const badge = $('tt-type-badge');
-    if (badge) {
-      badge.textContent = '';
-      badge.className = 'tt-type';
-    }
-    const ttBody = $('tt-body'); if (ttBody) ttBody.innerHTML = detail ? `<div style="font-size:11px;color:var(--dim);line-height:1.6">${detail}</div>` : '';
-    const ttHint = $('tt-hint'); if (ttHint) ttHint.textContent = '';
+    $('tt-icon').textContent = 'ℹ';
+    $('tt-title').textContent = text;
+    $('tt-type-badge').textContent = '';
+    $('tt-type-badge').className = 'tt-type';
+    $('tt-body').innerHTML = detail ? `<div style="font-size:11px;color:var(--dim);line-height:1.6">${detail}</div>` : '';
+    $('tt-hint').textContent = '';
     const rect = el.getBoundingClientRect();
     this._pos(rect.left, rect.bottom + 6);
     this._tt.style.display = 'block';
@@ -1310,12 +1421,11 @@ const Tooltip = {
 
   hide(delay = 80) {
     clearTimeout(this._timer);
-    this._timer = setTimeout(() => { if (this._tt) this._tt.style.display = 'none'; }, delay);
+    this._timer = setTimeout(() => { this._tt.style.display = 'none'; }, delay);
   },
 
   _pos(x, y) {
     const tt = this._tt;
-    if (!tt) return;
     tt.style.left = '-9999px'; tt.style.top = '-9999px'; tt.style.display = 'block';
     const w = tt.offsetWidth, h = tt.offsetHeight;
     const vw = window.innerWidth, vh = window.innerHeight;
@@ -1341,82 +1451,77 @@ function _findDeadScore(nodeData, analysis) {
 // ════════════════════════════════════════════════
 const UI = {
   setStatus(msg, state = '') {
-    const st = $('status-text'); if (st) st.textContent = msg;
-    const sd = $('sdot'); if (sd) sd.className = state;
+    $('status-text').textContent = msg;
+    $('sdot').className = state;
   },
 
   showLoading(msg = 'Analizando…') {
-    const lt = $('loading-text'); if (lt) lt.textContent = msg;
-    const lo = $('loading-overlay'); if (lo) lo.classList.add('show');
+    $('loading-text').textContent = msg;
+    $('loading-overlay').classList.add('show');
   },
 
-  hideLoading() {
-    const lo = $('loading-overlay'); if (lo) lo.classList.remove('show');
-  },
+  hideLoading() { $('loading-overlay').classList.remove('show'); },
 
   switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
     if (tab === 'trace' && State.selectedFile) UI.renderTrace(State.selectedFile);
-    if (tab === 'sessions' && typeof Sessions !== 'undefined') Sessions.load();
-    if (tab === 'audit' && typeof Audit !== 'undefined') Audit.loadSelects();
   },
 
   showUpload() {
     UI.switchTab('graph');
     State.analysis = null; State.selectedFile = null;
-    const uz = $('upload-zone'); if (uz) uz.style.display    = 'flex';
-    const gc = $('graph-canvas'); if (gc) gc.style.display   = 'none';
-    const gl = $('graph-legend'); if (gl) gl.style.display   = 'none';
-    const gctrl = $('graph-controls'); if (gctrl) gctrl.style.display = 'none';
-    const gfb = $('graph-filter-bar'); if (gfb) gfb.classList.remove('show');
+    $('upload-zone').style.display    = 'flex';
+    $('graph-canvas').style.display   = 'none';
+    $('graph-legend').style.display   = 'none';
+    $('graph-controls').style.display = 'none';
+    $('graph-filter-bar').classList.remove('show');
     UI.setUploadMode('file');
-    const fl = $('file-list'); if (fl) fl.innerHTML   = '<div class="empty">Sin archivos</div>';
-    const fp = $('files-panel'); if (fp) fp.innerHTML = '<div class="empty">Cargá un repositorio para ver los archivos.</div>';
-    const dp = $('dead-panel'); if (dp) dp.innerHTML  = '<div class="empty">Cargá un repositorio para ver el análisis de dead code.</div>';
-    const tp = $('trace-panel'); if (tp) tp.innerHTML = '<div class="empty">Seleccioná un archivo en la lista para ver su trazabilidad.</div>';
-    const db = $('detail-body'); if (db) db.innerHTML = '<div class="empty">Seleccioná un nodo o archivo.</div>';
-    const dt = $('detail-title'); if (dt) dt.textContent = 'Detalle';
-    const be = $('btn-export'); if (be) be.style.display  = 'none';
-    const ba = $('btn-ai'); if (ba) ba.style.display      = 'none';
-    const fi = $('file-input'); if (fi) fi.value  = '';
-    try { const fdi = $('folder-input'); if (fdi) fdi.value = ''; } catch(_) {}
-    const di = $('dump-input'); if (di) di.value  = '';
-    const fs = $('file-search'); if (fs) fs.value = '';
-    if (typeof AI !== 'undefined') AI.resetUI();
+    $('file-list').innerHTML   = '<div class="empty">Sin archivos</div>';
+    $('files-panel').innerHTML = '<div class="empty">Cargá un repositorio para ver los archivos.</div>';
+    $('dead-panel').innerHTML  = '<div class="empty">Cargá un repositorio para ver el análisis de dead code.</div>';
+    $('trace-panel').innerHTML = '<div class="empty">Seleccioná un archivo en la lista para ver su trazabilidad.</div>';
+    $('detail-body').innerHTML = '<div class="empty">Seleccioná un nodo o archivo.</div>';
+    $('detail-title').textContent = 'Detalle';
+    $('btn-export').style.display  = 'none';
+    $('btn-ai').style.display      = 'none';
+    $('file-input').value  = '';
+    try { $('folder-input').value = ''; } catch(_) {}
+    $('dump-input').value  = ''; $('file-search').value = '';
+    AI.resetUI();
     UI.setStatus('Listo — subí un repositorio para comenzar');
   },
 
   setUploadMode(mode) {
     State.uploadMode = mode;
 
-    // Web mode additions
-    if (mode === 'web-zip') {
-      State.uploadMode = 'web-zip';
-      const da = $('drop-area'); if (da) da.style.display = 'block';
-      const dua = $('dump-area'); if (dua) dua.style.display = 'none';
-      const fi = $('file-input'); if (fi) fi.accept = '.zip';
-      const dt = $('drop-title'); if (dt) dt.textContent = 'Arrastrá tu .zip web aquí';
-      const ds = $('drop-sub'); if (ds) ds.textContent = 'o hacé clic — acepta .html, .css, .js';
-      const da2 = $('drop-area'); if (da2) da2.onclick = () => $('file-input').click();
-      return;
-    }
-    if (mode === 'web-dump') {
-      State.uploadMode = 'web-dump';
-      const da = $('drop-area'); if (da) da.style.display = 'none';
-      const dua = $('dump-area'); if (dua) dua.style.display = 'block';
-      const di = $('dump-input'); if (di) di.placeholder = 'Pegá aquí el dump de tu proyecto web (HTML/CSS/JS en formato machete)…';
-      return;
-    }
+  // Web mode additions
+  if (mode === 'web-zip') {
+    State.uploadMode = 'web-zip';
+    $('drop-area').style.display = 'block';
+    $('dump-area').style.display = 'none';
+    $('file-input').accept = '.zip';
+    $('drop-title').textContent = 'Arrastrá tu .zip web aquí';
+    $('drop-sub').textContent = 'o hacé clic — acepta .html, .css, .js';
+    $('drop-area').onclick = () => $('file-input').click();
+    return;
+  }
+  if (mode === 'web-dump') {
+    State.uploadMode = 'web-dump';
+    $('drop-area').style.display = 'none';
+    $('dump-area').style.display = 'block';
+    $('dump-input').placeholder = 'Pegá aquí el dump de tu proyecto web (HTML/CSS/JS en formato machete)…';
+    return;
+  }
 
     ['file','folder','zip','dump'].forEach(m => {
       const el = $(`umode-${m}`); if (el) el.classList.toggle('active', m === mode);
     });
     const isDump = mode === 'dump';
-    const da = $('drop-area'); if (da) da.style.display = isDump ? 'none' : 'block';
-    const dua = $('dump-area'); if (dua) dua.style.display = isDump ? 'block' : 'none';
+    $('drop-area').style.display = isDump ? 'none' : 'block';
+    $('dump-area').style.display = isDump ? 'block' : 'none';
     // Route click to correct input
-    const da2 = $('drop-area'); if (da2) da2.onclick = () => $(mode === 'folder' ? 'folder-input' : 'file-input').click();
+    $('drop-area').onclick = () => $(mode === 'folder' ? 'folder-input' : 'file-input').click();
     if (!isDump) {
       const MAP = {
         file:   ['.py,.txt',  'Arrastrá archivos .py aquí',       'o hacé clic para seleccionar archivos Python'],
@@ -1424,15 +1529,15 @@ const UI = {
         zip:    ['.zip',      'Arrastrá tu archivo .zip aquí',     'o hacé clic para seleccionar un .zip'],
       };
       const [accept, title, sub] = MAP[mode] || MAP.file;
-      const fi = $('file-input'); if (fi) fi.accept = accept;
-      const dt = $('drop-title'); if (dt) dt.textContent = title;
-      const ds = $('drop-sub'); if (ds) ds.textContent = sub;
+      $('file-input').accept      = accept;
+      $('drop-title').textContent = title;
+      $('drop-sub').textContent   = sub;
     }
   },
 
-  onDragOver(e)  { e.preventDefault(); const da = $('drop-area'); if (da) da.classList.add('drag'); },
-  onDragLeave()  { const da = $('drop-area'); if (da) da.classList.remove('drag'); },
-  onDrop(e)      { e.preventDefault(); const da = $('drop-area'); if (da) da.classList.remove('drag'); UI.processFiles(e.dataTransfer.files); },
+  onDragOver(e)  { e.preventDefault(); $('drop-area').classList.add('drag'); },
+  onDragLeave()  { $('drop-area').classList.remove('drag'); },
+  onDrop(e)      { e.preventDefault(); $('drop-area').classList.remove('drag'); UI.processFiles(e.dataTransfer.files); },
   onFileInput(e) { UI.processFiles(e.target.files); },
 
   processFiles(fl) {
@@ -1455,17 +1560,6 @@ const UI = {
     } catch(e) { UI.onError(e.message); }
   },
 
-  async uploadWebZip(file) {
-    UI.showLoading('Analizando ZIP web…');
-    try {
-      const fd = new FormData(); fd.append('file', file);
-      const r = await fetch(`${API}/analyze/web-zip`, { method:'POST', headers: Auth.headers(), body:fd });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.detail || 'Error');
-      UI.onAnalysis(data);
-    } catch(e) { UI.onError(e.message); }
-  },
-
   async uploadPyFiles(files) {
     if (!files.length) { UI.onError('No se encontraron archivos .py'); return; }
     const count = files.length;
@@ -1473,6 +1567,8 @@ const UI = {
     try {
       const fd = new FormData();
       files.forEach(f => {
+        // webkitRelativePath preserva la ruta relativa (ej: "myrepo/pkg/utils.py")
+        // si no existe, usamos solo el nombre
         const path = f.webkitRelativePath || f.name;
         fd.append('files', f, path);
       });
@@ -1484,7 +1580,7 @@ const UI = {
   },
 
   async analyzeWebDump() {
-    const content = $('dump-input')?.value.trim() || '';
+    const content = $('dump-input').value.trim();
     if (!content) { UI.onError('El campo está vacío'); return; }
     UI.showLoading('Analizando dump web…');
     try {
@@ -1499,7 +1595,7 @@ const UI = {
   },
 
   async analyzeDump() {
-    const content = $('dump-input')?.value.trim() || '';
+    const content = $('dump-input').value.trim();
     if (!content) { UI.onError('El campo está vacío'); return; }
     UI.showLoading('Analizando dump…');
     try {
@@ -1519,48 +1615,26 @@ const UI = {
     const s = data.summary;
     const pt = data.project_type === 'web' ? '🌐 Web' : '🐍 Python';
     UI.setStatus(`${pt} · ${s.total_files} archivos · ${s.total_nodes} nodos`, 'ok');
-    const be = $('btn-export'); if (be) be.style.display = '';
-    const ba = $('btn-ai'); if (ba) ba.style.display = '';
+    $('btn-export').style.display = '';
+    $('btn-ai').style.display = '';
     UI.renderFileList(data.files);
     if (data.project_type === 'web') {
       UI.renderWebFilesTab(data);
-      const td = $('tab-dead'); if (td) td.style.display = 'none';
-      const tt = $('tab-trace'); if (tt) tt.style.display = 'none';
+      $('tab-dead').style.display = 'none';
+      $('tab-trace').style.display = 'none';
     } else {
-      const td = $('tab-dead'); if (td) td.style.display = '';
-      const tt = $('tab-trace'); if (tt) tt.style.display = '';
+      $('tab-dead').style.display = '';
+      $('tab-trace').style.display = '';
       UI.renderFilesTab(data);
     }
     UI.renderDeadCode(data);
-    if (typeof Graph !== 'undefined') Graph.init(data.graph);
-    const uz = $('upload-zone'); if (uz) uz.style.display    = 'none';
-    const gc = $('graph-canvas'); if (gc) gc.style.display   = 'block';
-    const gl = $('graph-legend'); if (gl) gl.style.display   = 'block';
-    const gctrl = $('graph-controls'); if (gctrl) gctrl.style.display = 'flex';
-    const gfb = $('graph-filter-bar'); if (gfb) gfb.classList.add('show');
-    if (typeof AI !== 'undefined') AI.onAnalysisReady(data);
-
-    // Runtime init
-    const flowId = 'flow-' + Date.now().toString(36);
-    State.currentFlowId = flowId;
-    fetch(`${API}/flows/${flowId}/attach`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...Auth.headers() },
-      body: JSON.stringify(data),
-    }).catch(() => {});
-    if (typeof Runtime !== 'undefined') Runtime.init(flowId);
-
-    // Pre-fill audit flow selector
-    setTimeout(() => {
-      const sel = $('audit-flow');
-      if (sel && State.currentFlowId) {
-        if (![...sel.options].some(o => o.value === State.currentFlowId)) {
-          sel.innerHTML += `<option value="${State.currentFlowId}">${State.currentFlowId} (actual)</option>`;
-        }
-        sel.value = State.currentFlowId;
-        const arb = $('audit-run-btn'); if (arb) arb.disabled = false;
-      }
-    }, 500);
+    Graph.init(data.graph);
+    $('upload-zone').style.display    = 'none';
+    $('graph-canvas').style.display   = 'block';
+    $('graph-legend').style.display   = 'block';
+    $('graph-controls').style.display = 'flex';
+    $('graph-filter-bar').classList.add('show');
+    AI.onAnalysisReady(data);
   },
 
   onError(msg) {
@@ -1579,7 +1653,6 @@ const UI = {
   },
   _renderFiltered(files) {
     const el = $('file-list');
-    if (!el) return;
     if (!files.length) { el.innerHTML = '<div class="empty">Sin archivos</div>'; return; }
     el.innerHTML = files.map(f => {
       const badge = f.dead_code_high > 0
@@ -1587,6 +1660,7 @@ const UI = {
         : f.dead_code_count > 0
           ? `<span class="fi-badge warn">⚠ ${f.dead_code_count}</span>` : '';
       const ep = CSS.escape(f.path);
+      // Stats for tooltip
       const tip = `data-tip-file="${ep}"`;
       return `<div class="file-item" data-path="${f.path}" ${tip} onclick="UI.selectFile('${ep}')" ` +
              `onmouseenter="UI.hoverFile(event,'${ep}')" onmouseleave="Tooltip.hide()">` +
@@ -1608,20 +1682,19 @@ const UI = {
     document.querySelectorAll('.file-item').forEach(el =>
       el.classList.toggle('active', el.dataset.path === path));
     UI.renderDetailForFile(path);
-    if (typeof Graph !== 'undefined') Graph.highlightFile(path);
-    const tt = $('tab-trace'); if (tt && tt.classList.contains('active')) UI.renderTrace(path);
+    Graph.highlightFile(path);
+    if ($('tab-trace').classList.contains('active')) UI.renderTrace(path);
   },
 
   // ── Detail panel ──────────────────────────────
   renderDetailForFile(path) {
     const data   = State.analysis;
-    if (!data) return;
-    const struct = data.structure?.[path] || { classes:{}, functions:[] };
-    const deps   = data.dependencies?.[path] || { all:[], internal:[], external:[], internal_map:{} };
-    const dcItems= data.dead_code?.items?.[path] || [];
+    const struct = data.structure[path]    || { classes:{}, functions:[] };
+    const deps   = data.dependencies[path] || { all:[], internal:[], external:[], internal_map:{} };
+    const dcItems= data.dead_code.items[path] || [];
     const fname  = path.split('/').pop();
 
-    const dt = $('detail-title'); if (dt) dt.textContent = fname;
+    $('detail-title').textContent = fname;
 
     const nC = Object.keys(struct.classes).length;
     const nF = struct.functions.length;
@@ -1696,7 +1769,7 @@ const UI = {
       });
     }
 
-    const db = $('detail-body'); if (db) db.innerHTML = h;
+    $('detail-body').innerHTML = h;
   },
 
   _hoverNode(e, nodeIdEscaped) {
@@ -1732,7 +1805,7 @@ const UI = {
         ${f.dead_code_count>0?`<div class="metric-row"><span class="metric-label">Dead code</span><span class="metric-value ${dcCls}">${f.dead_code_count} (${f.dead_code_high} alto)</span></div>`:''}
       </div>`;
     });
-    const fp = $('files-panel'); if (fp) fp.innerHTML = h;
+    $('files-panel').innerHTML = h;
   },
 
   // ── Dead code tab ─────────────────────────────
@@ -1761,13 +1834,13 @@ const UI = {
       });
     });
     if (!any) h += '<div class="empty">¡Sin dead code detectado!</div>';
-    const dp = $('dead-panel'); if (dp) dp.innerHTML = h;
+    $('dead-panel').innerHTML = h;
   },
 
   // ── Traceability tab ──────────────────────────
   async renderTrace(path) {
     if (!State.analysis) return;
-    const tp = $('trace-panel'); if (tp) tp.innerHTML = '<div class="empty">Cargando…</div>';
+    $('trace-panel').innerHTML = '<div class="empty">Cargando…</div>';
     try {
       const r = await fetch(`${API}/traceability`, {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -1943,9 +2016,9 @@ const UI = {
         });
       }
 
-      if (tp) tp.innerHTML = h;
+      $('trace-panel').innerHTML = h;
     } catch(e) {
-      if (tp) tp.innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+      $('trace-panel').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
     }
   },
 
@@ -1955,69 +2028,6 @@ const UI = {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'flow_inspector_analysis.json'; a.click();
   },
-
-  toggleSidebar() {
-    const sb = $('sidebar'); const ov = $('sidebar-overlay');
-    if (sb && ov) {
-      const open = sb.classList.toggle('open');
-      ov.classList.toggle('show', open);
-    }
-  },
-  closeDetail() {
-    const d = $('detail'); if (d) d.classList.remove('open');
-  },
-  openDetail() {
-    if (window.innerWidth < 768) {
-      const d = $('detail'); if (d) d.classList.add('open');
-    }
-  },
-
-  renderWebFilesTab(data) {
-    const s = data.summary;
-    let h = `<div class="stats-grid">
-      <div class="stat-box"><div class="stat-num">${s.html_files||0}</div><div class="stat-lbl">HTML</div></div>
-      <div class="stat-box"><div class="stat-num">${s.css_files||0}</div><div class="stat-lbl">CSS</div></div>
-      <div class="stat-box"><div class="stat-num">${s.js_files||0}</div><div class="stat-lbl">JS/TS</div></div>
-    </div>`;
-    (data.files||[]).forEach(f => {
-      const typeIcon = {html:'🌐',css:'🎨',js:'⚡',ts:'⚡'}[f.type]||'📄';
-      const typeColor = {html:'var(--accent)',css:'var(--accent3)',js:'var(--warn)'}[f.type]||'var(--dim)';
-      h += `<div class="card">
-        <div class="card-title" style="color:${typeColor}">${typeIcon} ${f.name} <span class="mode-badge web">${f.type.toUpperCase()}</span></div>`;
-      if (f.type === 'html') {
-        if (f.title) h += `<div class="metric-row"><span class="metric-label">Título</span><span class="metric-value" style="color:var(--text)">${f.title}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">Scripts externos</span><span class="metric-value accent">${f.scripts}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">Stylesheets</span><span class="metric-value accent">${f.stylesheets}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">IDs únicos</span><span class="metric-value">${f.ids}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">Clases CSS usadas</span><span class="metric-value">${f.classes_count}</span></div>`;
-        if (f.forms) h += `<div class="metric-row"><span class="metric-label">Formularios</span><span class="metric-value">${f.forms}</span></div>`;
-        if (f.custom_elements?.length) h += `<div class="metric-row"><span class="metric-label">Web Components</span><span class="metric-value accent">${f.custom_elements.join(', ')}</span></div>`;
-      } else if (f.type === 'css') {
-        h += `<div class="metric-row"><span class="metric-label">Reglas CSS</span><span class="metric-value accent">${f.rule_count}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">Variables CSS</span><span class="metric-value">${f.variables}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">Media queries</span><span class="metric-value">${f.media_queries}</span></div>`;
-        if (f.keyframes?.length) h += `<div class="metric-row"><span class="metric-label">Animaciones</span><span class="metric-value">${f.keyframes.join(', ')}</span></div>`;
-        if (f.imports?.length) h += `<div class="metric-row"><span class="metric-label">@imports</span><span class="metric-value">${f.imports.join(', ')}</span></div>`;
-      } else if (f.type === 'js') {
-        h += `<div class="metric-row"><span class="metric-label">Funciones</span><span class="metric-value accent">${f.functions?.length||0}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">Clases JS</span><span class="metric-value">${f.classes?.length||0}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">Imports</span><span class="metric-value">${f.imports?.length||0}</span></div>`;
-        h += `<div class="metric-row"><span class="metric-label">Exports</span><span class="metric-value">${f.exports?.length||0}</span></div>`;
-        if (f.event_listeners?.length) h += `<div class="metric-row"><span class="metric-label">Event listeners</span><span class="metric-value">${f.event_listeners.join(', ')}</span></div>`;
-        if (f.fetch_calls?.length) h += `<div class="metric-row"><span class="metric-label">Fetch calls</span><span class="metric-value warn">${f.fetch_calls.join(', ')}</span></div>`;
-        if (f.api_endpoints?.length) h += `<div class="metric-row"><span class="metric-label">Endpoints API</span><span class="metric-value accent">${f.api_endpoints.join(', ')}</span></div>`;
-      }
-      h += `</div>`;
-    });
-    const fp = $('files-panel'); if (fp) fp.innerHTML = h;
-  }
-};
-
-// Patch UI.selectFile to auto-open detail on mobile
-const _origSelectFileMobile = UI.selectFile.bind(UI);
-UI.selectFile = function(pathEscaped) {
-  _origSelectFileMobile(pathEscaped);
-  UI.openDetail();
 };
 
 // ════════════════════════════════════════════════
@@ -2028,14 +2038,17 @@ const Graph = {
   pos:{}, scale:1, ox:0, oy:0,
   dragging:null, panStart:null, selectedNode:null,
   physicsOn:true, animFrame:null, hlFile:null,
+  _rtActiveNodes: null,
 
   // ── Filter state ──────────────────────────────
-  view: 'all',
+  view: 'all',                          // all | files-only | calls | imports
   nodeFilters: { file:true, class:true, function:true, module:true },
   edgeFilters: { IMPORTS:true, DEFINES:true, CALLS:true },
   flowFilters: { upstream:true, downstream:true },
-  _visNodes: null,
-  _visEdges: null,
+
+  // Computed filtered sets (recomputed on filter change)
+  _visNodes: null,   // Set of visible node ids
+  _visEdges: null,   // filtered edges array
 
   setView(v) {
     this.view = v;
@@ -2069,12 +2082,15 @@ const Graph = {
     const sel = this.selectedNode;
     const hlFile = this.hlFile;
 
+    // Step 1: determine visible nodes by type
     let visNodes = new Set(Object.keys(this.nodes).filter(id => {
       const n = this.nodes[id];
+      // view presets override type filters
       if (this.view === 'files-only') return n.type === 'file';
       return this.nodeFilters[n.type] !== false;
     }));
 
+    // Step 2: determine visible edges by relation
     let visEdges = this.edges.filter(e => {
       if (!visNodes.has(e.from) || !visNodes.has(e.to)) return false;
       if (this.view === 'calls')   return e.relation === 'CALLS';
@@ -2082,10 +2098,12 @@ const Graph = {
       return this.edgeFilters[e.relation] !== false;
     });
 
+    // Step 3: upstream/downstream flow filter (only applies when a node is selected)
     if (sel && (!this.flowFilters.upstream || !this.flowFilters.downstream)) {
-      const upSet   = new Set();
-      const downSet = new Set();
+      const upSet   = new Set();  // nodes that lead TO sel
+      const downSet = new Set();  // nodes sel leads TO
 
+      // BFS upstream
       if (this.flowFilters.upstream) {
         const q = [sel]; const visited = new Set([sel]);
         while (q.length) {
@@ -2095,6 +2113,7 @@ const Graph = {
           });
         }
       }
+      // BFS downstream
       if (this.flowFilters.downstream) {
         const q = [sel]; const visited = new Set([sel]);
         while (q.length) {
@@ -2104,6 +2123,7 @@ const Graph = {
           });
         }
       }
+      // keep only relevant nodes
       const keep = new Set([sel, ...upSet, ...downSet]);
       visNodes = new Set([...visNodes].filter(id => keep.has(id)));
       visEdges = visEdges.filter(e => visNodes.has(e.from) && visNodes.has(e.to));
@@ -2115,14 +2135,15 @@ const Graph = {
 
   init(graphData) {
     this.canvas = $('graph-canvas');
-    if (!this.canvas) return;
     this.ctx    = this.canvas.getContext('2d');
     this.nodes  = graphData.nodes;
     this.edges  = graphData.edges;
+    // Reset filter state
     this.view = 'all';
     this.nodeFilters = { file:true, class:true, function:true, module:true };
     this.edgeFilters = { IMPORTS:true, DEFINES:true, CALLS:true };
     this.flowFilters = { upstream:true, downstream:true };
+    // Reset UI toggles
     ['fc-file','fc-class','fc-function','fc-module',
      'fe-IMPORTS','fe-DEFINES','fe-CALLS','fc-upstream','fc-downstream']
       .forEach(id => { const el=$(id); if(el) el.classList.add('on'); });
@@ -2216,6 +2237,7 @@ const Graph = {
       CALLS:   { color:'#10b981', alpha:0.3  },
     };
 
+    // Draw edges with direction arrows
     visEdg.forEach(e => {
       const a=this.pos[e.from], b=this.pos[e.to]; if(!a||!b) return;
       const ec = ECOL[e.relation] || { color:'#6b7280', alpha:0.2 };
@@ -2229,6 +2251,7 @@ const Graph = {
       ctx.lineWidth = emphasis ? 1.5/this.scale : 1/this.scale;
       ctx.stroke();
 
+      // Arrow head on edges that are emphasized
       if (emphasis && this.scale > 0.3) {
         const dx=b.x-a.x, dy=b.y-a.y, len=Math.sqrt(dx*dx+dy*dy)||1;
         const ux=dx/len, uy=dy/len;
@@ -2247,13 +2270,14 @@ const Graph = {
     const TYPE={file:{color:'#60a5fa',r:9},class:{color:'#a78bfa',r:7},function:{color:'#34d399',r:5},module:{color:'#6b7280',r:5},external:{color:'#374151',r:4}};
     Object.entries(this.pos).forEach(([id,p]) => {
       const node=this.nodes[id]; if(!node) return;
-      if (vis && !vis.has(id)) return;
+      if (vis && !vis.has(id)) return;  // respect filter
       const {color,r}=TYPE[node.type]||TYPE.module;
       const isSel=sel===id, isHl=hl&&(id===`file:${hl}`||id.includes(hl));
       const alpha=(!hl&&!sel)?1:(isHl||isSel)?1:0.18;
       const rad=r/this.scale*2;
       ctx.globalAlpha=alpha;
       if(isSel){
+        // Glow ring
         ctx.beginPath(); ctx.arc(p.x,p.y,rad+4/this.scale,0,Math.PI*2);
         ctx.strokeStyle=color+'66'; ctx.lineWidth=3/this.scale; ctx.stroke();
         ctx.beginPath(); ctx.arc(p.x,p.y,rad+1.5/this.scale,0,Math.PI*2);
@@ -2267,36 +2291,6 @@ const Graph = {
       }
     });
     ctx.globalAlpha=1; ctx.restore();
-
-    // Runtime Heatmap overlay
-    if (typeof HeatMap !== 'undefined' && HeatMap._enabled) {
-      ctx.save(); ctx.translate(this.ox, this.oy); ctx.scale(this.scale, this.scale);
-      for (const [id, p] of Object.entries(this.pos)) {
-        const alpha = HeatMap.getAlpha(id);
-        if (alpha === null || alpha < 0.05) continue;
-        const node = this.nodes[id]; if (!node) continue;
-        const r = (node.type === 'file' ? 9 : 6) / this.scale * 2;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r + 4/this.scale, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(251,191,36,${(alpha * 0.8).toFixed(2)})`;
-        ctx.lineWidth = 2/this.scale; ctx.stroke();
-      }
-      ctx.restore();
-    }
-
-    // Runtime Active Nodes overlay
-    if (Graph._rtActiveNodes?.size) {
-      ctx.save(); ctx.translate(this.ox,this.oy); ctx.scale(this.scale,this.scale);
-      for (const [id, p] of Object.entries(this.pos)) {
-        if (!Graph._rtActiveNodes.has(id)) continue;
-        const node = this.nodes[id]; if (!node) continue;
-        const r = (node.type==='file'?9:6)/this.scale*2 + 6/this.scale;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2);
-        ctx.strokeStyle = 'rgba(52,211,153,0.7)'; ctx.lineWidth = 2/this.scale; ctx.stroke();
-        ctx.beginPath(); ctx.arc(p.x, p.y, 3/this.scale, 0, Math.PI*2);
-        ctx.fillStyle = '#34d399'; ctx.fill();
-      }
-      ctx.restore();
-    }
   },
 
   _s2w(sx,sy){return[(sx-this.ox)/this.scale,(sy-this.oy)/this.scale];},
@@ -2323,6 +2317,7 @@ const Graph = {
   _onMove(e) {
     if(this.dragging){const[wx,wy]=this._s2w(e.offsetX,e.offsetY);this.pos[this.dragging].x=wx;this.pos[this.dragging].y=wy;}
     else if(this.panStart){this.ox=e.offsetX-this.panStart.x;this.oy=e.offsetY-this.panStart.y;}
+    // Tooltip
     const id=this._nodeAt(e.offsetX,e.offsetY);
     if(id&&!this.dragging&&!this.panStart){
       Tooltip.showForNode(id,this.nodes[id],State.analysis,e.clientX,e.clientY);
@@ -2351,7 +2346,7 @@ const Graph = {
   },
   togglePhysics(){
     this.physicsOn=!this.physicsOn;
-    const btn = $('btn-physics'); if (btn) btn.style.color=this.physicsOn?'var(--accent3)':'var(--dim)';
+    $('btn-physics').style.color=this.physicsOn?'var(--accent3)':'var(--dim)';
   },
   highlightFile(path){
     this.hlFile=path;
@@ -2362,23 +2357,36 @@ const Graph = {
 
 // ── Node detail ────────────────────────────────────────────────
 UI.showNodeDetail = function(id, node) {
-  const dt = $('detail-title'); if (dt) dt.textContent = node.label||id;
-  const ei=Graph.edges.filter(e=>e.to===id).length;
-  const eo=Graph.edges.filter(e=>e.from===id).length;
-  const calls=Graph.edges.filter(e=>e.to===id&&e.relation==='CALLS').length;
-  let h=`<div class="card">
+  if (!node) {
+    document.getElementById("detail-title").textContent = "Detalle";
+    document.getElementById("detail-body").innerHTML = '<div class="empty">Nodo no encontrado</div>';
+    return;
+  }
+  document.getElementById("detail-title").textContent = node.label || id;
+  const ei    = Graph.edges.filter(e => e.to   === id).length;
+  const eo    = Graph.edges.filter(e => e.from === id).length;
+  const calls = Graph.edges.filter(e => e.to   === id && e.relation === "CALLS").length;
+  let h = `<div class="card">
     <div class="metric-row"><span class="metric-label">Tipo</span><span class="metric-value">${node.type}</span></div>
     <div class="metric-row"><span class="metric-label">Entradas</span><span class="metric-value">${ei}</span></div>
     <div class="metric-row"><span class="metric-label">Salidas</span><span class="metric-value">${eo}</span></div>
     <div class="metric-row"><span class="metric-label">Calls entrantes</span>
-      <span class="metric-value ${calls===0&&node.type==='function'?'err':''}">${calls}</span></div>
+      <span class="metric-value ${calls===0&&node.type==="function"?"err":""}">${calls}</span></div>
   </div>`;
-  if(node.decorators?.length){h+=`<div class="sec-hdr">Decoradores</div>`;node.decorators.forEach(d=>{h+=`<div class="import-row">@${d}</div>`;});}
-  if(node.inherits?.length){h+=`<div class="sec-hdr">Herencia</div>`;node.inherits.forEach(i=>{h+=`<div class="import-row">← ${i}</div>`;});}
-  if(node.type==='file'&&node.path){h+=`<br/><button class="btn" style="width:100%" onclick="UI.selectFile('${CSS.escape(node.path)}')">Ver detalle completo</button>`;}
-  const db = $('detail-body'); if (db) db.innerHTML = h;
-};
-
+  if (node.decorators?.length) {
+    h += `<div class="sec-hdr">Decoradores</div>`;
+    node.decorators.forEach(d => { h += `<div class="import-row">@${d}</div>`; });
+  }
+  if (node.inherits?.length) {
+    h += `<div class="sec-hdr">Herencia</div>`;
+    node.inherits.forEach(i => { h += `<div class="import-row">← ${i}</div>`; });
+  }
+  if (node.type === "file" && node.path) {
+    h += `<br/><button class="btn" style="width:100%" onclick="UI.selectFile('${CSS.escape(node.path)}')">Ver detalle completo</button>`;
+  }
+  document.getElementById("detail-body").innerHTML = h;
+  if (window.innerWidth < 768) UI.openDetail();
+}
 // ════════════════════════════════════════════════
 // AI CHANGE IMPACT ENGINE
 // ════════════════════════════════════════════════
@@ -2395,66 +2403,60 @@ const AI = {
     const trimmed = val.trim();
     const isValid = trimmed.startsWith('gsk_') && trimmed.length > 20;
     const status  = $('key-status');
-    if (status) {
-      status.textContent = isValid ? 'OK' : 'Sin key';
-      status.className   = `ai-key-status ${isValid ? 'set' : 'unset'}`;
-    }
+    status.textContent = isValid ? 'OK' : 'Sin key';
+    status.className   = `ai-key-status ${isValid ? 'set' : 'unset'}`;
     this._checkSendable();
   },
 
   _checkSendable() {
-    const keyInput = $('groq-key');
-    const hasKey  = keyInput ? keyInput.value.trim().startsWith('gsk_') : false;
+    const hasKey  = $('groq-key').value.trim().startsWith('gsk_');
     const hasRepo = !!State.analysis;
-    const sendBtn = $('ai-send');
-    if (sendBtn) sendBtn.disabled = !(hasKey && hasRepo);
+    $('ai-send').disabled = !(hasKey && hasRepo);
     const hint = $('ai-send-hint');
-    if (hint) {
-      if (!hasKey && !hasRepo) hint.textContent = 'Ingresá tu Groq API key y cargá un repositorio';
-      else if (!hasKey)        hint.textContent = 'Ingresá tu Groq API key primero';
-      else if (!hasRepo)       hint.textContent = 'Cargá un repositorio primero';
-      else                     hint.textContent = '';
-    }
+    if (!hasKey && !hasRepo) hint.textContent = 'Ingresá tu Groq API key y cargá un repositorio';
+    else if (!hasKey)        hint.textContent = 'Ingresá tu Groq API key primero';
+    else if (!hasRepo)       hint.textContent = 'Cargá un repositorio primero';
+    else                     hint.textContent = '';
   },
 
   onAnalysisReady(data) {
     this._checkSendable();
-    const noAna = $('ai-no-analysis'); if (noAna) noAna.style.display = 'none';
-    const welcome = $('ai-welcome'); if (welcome) welcome.style.display = 'flex';
-    const resp = $('ai-response'); if (resp) resp.innerHTML = '';
+    // Show welcome
+    $('ai-no-analysis').style.display = 'none';
+    $('ai-welcome').style.display = 'flex';
+    $('ai-response').innerHTML = '';
+    // Populate examples
     const ex = $('ai-examples');
-    if (ex) {
-      ex.innerHTML = '<span style="font-size:10px;color:var(--muted);align-self:center">Ejemplos:</span>';
-      this._examples.forEach(e => {
-        const btn = document.createElement('button');
-        btn.className = 'ai-example'; btn.textContent = e;
-        btn.onclick = () => { const aq = $('ai-query'); if (aq) aq.value = e; AI.analyze(); };
-        ex.appendChild(btn);
-      });
-    }
+    ex.innerHTML = '<span style="font-size:10px;color:var(--muted);align-self:center">Ejemplos:</span>';
+    this._examples.forEach(e => {
+      const btn = document.createElement('button');
+      btn.className = 'ai-example'; btn.textContent = e;
+      btn.onclick = () => { $('ai-query').value = e; AI.analyze(); };
+      ex.appendChild(btn);
+    });
   },
 
   resetUI() {
-    const sendBtn = $('ai-send'); if (sendBtn) sendBtn.disabled = true;
-    const hint = $('ai-send-hint'); if (hint) hint.textContent = 'Ingresá tu Groq API key primero';
-    const noAna = $('ai-no-analysis'); if (noAna) noAna.style.display = 'block';
-    const welcome = $('ai-welcome'); if (welcome) welcome.style.display = 'none';
-    const resp = $('ai-response'); if (resp) resp.innerHTML = '';
-    const think = $('ai-thinking'); if (think) think.classList.remove('show');
+    $('ai-send').disabled = true;
+    $('ai-send-hint').textContent = 'Ingresá tu Groq API key primero';
+    $('ai-no-analysis').style.display = 'block';
+    $('ai-welcome').style.display = 'none';
+    $('ai-response').innerHTML = '';
+    $('ai-thinking').classList.remove('show');
   },
 
   async analyze() {
-    const aq = $('ai-query'); const query = aq ? aq.value.trim() : '';
+    const query = $('ai-query').value.trim();
     if (!query) return;
     if (!State.analysis) { alert('Primero cargá un repositorio.'); return; }
-    const keyInput = $('groq-key'); const apiKey = keyInput ? keyInput.value.trim() : '';
+    const apiKey = $('groq-key').value.trim();
     if (!apiKey) { alert('Ingresá tu Groq API key.'); return; }
 
-    const welcome = $('ai-welcome'); if (welcome) welcome.style.display = 'none';
-    const resp = $('ai-response'); if (resp) resp.innerHTML = '';
-    const think = $('ai-thinking'); if (think) think.classList.add('show');
-    const sendBtn = $('ai-send'); if (sendBtn) sendBtn.disabled = true;
-    const sendIcon = $('ai-send-icon'); if (sendIcon) sendIcon.textContent = '⟳';
+    $('ai-welcome').style.display = 'none';
+    $('ai-response').innerHTML = '';
+    $('ai-thinking').classList.add('show');
+    $('ai-send').disabled = true;
+    $('ai-send-icon').textContent = '⟳';
 
     try {
       const context = this._buildContext(State.analysis);
@@ -2462,33 +2464,43 @@ const AI = {
       const result  = await this._callGroq(prompt, apiKey);
       this._renderResult(result, query);
     } catch(e) {
-      if (resp) resp.innerHTML = `<div style="padding:16px"><div class="ai-error">Error al contactar Groq: ${e.message}</div></div>`;
+      $('ai-response').innerHTML = `<div style="padding:16px"><div class="ai-error">Error al contactar Groq: ${e.message}</div></div>`;
     } finally {
-      if (think) think.classList.remove('show');
-      if (sendBtn) sendBtn.disabled = false;
-      if (sendIcon) sendIcon.textContent = '◆';
+      $('ai-thinking').classList.remove('show');
+      $('ai-send').disabled = false;
+      $('ai-send-icon').textContent = '◆';
     }
   },
 
   _buildContext(analysis) {
     const lines = [];
+
+    // FILE STRUCTURE — include class methods for precise AI context
     lines.push('=== ESTRUCTURA DE ARCHIVOS ===');
     analysis.files.forEach(f => {
       const fname  = f.path.split('/').pop();
       const struct = analysis.structure?.[f.path] || {};
       lines.push(`\nARCHIVO: ${fname}`);
+
+      // Classes with ALL their methods
       Object.entries(struct.classes || {}).slice(0, 15).forEach(([cls, cdata]) => {
         const methods  = (cdata.methods || []).map(m => typeof m === 'string' ? m : m.name);
         const inherits = cdata.inherits?.length ? ` (extends ${cdata.inherits.join(',')})` : '';
         lines.push(`  CLASE ${cls}${inherits}`);
         if (methods.length) lines.push(`    metodos: ${methods.slice(0, 25).join(', ')}`);
       });
+
+      // Module-level functions
       const fns = (struct.functions || []).map(fn => typeof fn === 'string' ? fn : fn.name);
       if (fns.length) lines.push(`  funciones: ${fns.slice(0, 20).join(', ')}`);
+
+      // Internal imports
       const deps = analysis.dependencies?.[f.path] || {};
       const imports = (deps.internal || []);
       if (imports.length) lines.push(`  importa: ${imports.slice(0, 10).join(', ')}`);
     });
+
+    // CALL GRAPH — who calls what
     lines.push('\n=== GRAFO DE LLAMADAS ===');
     Object.entries(analysis.call_graph || {}).forEach(([fp, calls]) => {
       const fname = fp.split('/').pop();
@@ -2497,6 +2509,8 @@ const AI = {
         if (names.length) lines.push(`${fname}::${caller}() llama a: ${names.join(', ')}`);
       });
     });
+
+    // IMPORT GRAPH — who imports whom
     lines.push('\n=== GRAFO DE IMPORTS ===');
     const importedByMap = {};
     Object.entries(analysis.dependencies || {}).forEach(([fp, d]) => {
@@ -2509,6 +2523,7 @@ const AI = {
     Object.entries(importedByMap).forEach(([mod, by]) => {
       lines.push(`${mod} es importado por: ${by.join(', ')}`);
     });
+
     return lines.join('\n');
   },
 
@@ -2535,7 +2550,7 @@ FORMATO DE RESPUESTA — JSON puro, sin markdown, sin texto adicional:
   },
 
   async _callGroq(prompt, apiKey) {
-    const modelSel = $('groq-model'); const model = modelSel ? modelSel.value : 'llama-3.3-70b-versatile';
+    const model = $('groq-model').value;
     const response = await fetch(`${API}/api/groq`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2545,20 +2560,28 @@ FORMATO DE RESPUESTA — JSON puro, sin markdown, sin texto adicional:
         max_tokens:  2048,
         temperature: 0.1,
         messages: [
-          { role: "system", content: "You are a precise code impact analyzer. Always respond with valid JSON only. Never include markdown, explanations, or any text outside the JSON object." },
+          {
+            role: "system",
+            content: "You are a precise code impact analyzer. Always respond with valid JSON only. Never include markdown, explanations, or any text outside the JSON object.",
+          },
           { role: "user", content: prompt },
         ],
       }),
     });
+
     const payload = await response.json().catch(() => ({}));
+
     if (!response.ok) {
       const msg = payload.detail || payload.error?.message || `HTTP ${response.status}`;
+      // Translate common Groq errors to Spanish
       if (response.status === 401) throw new Error('API key inválida. Verificá tu key de Groq.');
       if (response.status === 429) throw new Error('Rate limit alcanzado. Esperá unos segundos y reintentá.');
       if (String(msg).includes('1001') || String(msg).includes('context')) throw new Error('El repositorio es muy grande para este modelo. Usá "Solo archivos" o un modelo con más contexto (Llama 3.3 70B).');
       throw new Error(msg);
     }
+
     const text = payload.choices?.[0]?.message?.content || '';
+    // Robust JSON extraction: find first { ... } block
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) throw new Error(`El modelo no devolvió JSON válido. Respuesta: ${text.slice(0,120)}`);
     try {
@@ -2572,18 +2595,29 @@ FORMATO DE RESPUESTA — JSON puro, sin markdown, sin texto adicional:
     const riskColor = { low:'var(--accent3)', medium:'var(--warn)', high:'var(--accent5)' };
     const riskLabel = { low:'Bajo', medium:'Medio', high:'Alto' };
     const risk = result.risk || 'medium';
+
     let h = `<div style="padding:16px 16px 0">`;
+
+    // Response header
     h += `<div class="ai-response-header">
       <span class="ai-response-badge">◆ Análisis Groq completado</span>
       <span style="font-size:10px;color:var(--dim);margin-left:auto">Riesgo: <span style="color:${riskColor[risk]};font-weight:600">${riskLabel[risk]}</span></span>
     </div>`;
+
+    // Summary banner
     h += `<div class="ai-summary-banner"><strong>Cambio:</strong> ${query}<br/><br/>${result.summary}</div>`;
+
+    // Impact blocks per file
     if (result.impacts && result.impacts.length) {
       const totalChanges = result.impacts.reduce((a, f) => a + f.changes.length, 0);
       h += `<div style="font-size:10px;color:var(--muted);margin-bottom:10px">${result.impacts.length} archivo${result.impacts.length!==1?'s':''} afectados · ${totalChanges} cambio${totalChanges!==1?'s':''}</div>`;
+
       result.impacts.forEach(fileImpact => {
         const reqCount = fileImpact.changes.filter(c=>c.type==='required').length;
-        const countLabel = reqCount > 0 ? `${reqCount} requerido${reqCount>1?'s':''}` : `${fileImpact.changes.length} cambio${fileImpact.changes.length>1?'s':''}`;
+        const countLabel = reqCount > 0
+          ? `${reqCount} requerido${reqCount>1?'s':''}`
+          : `${fileImpact.changes.length} cambio${fileImpact.changes.length>1?'s':''}`;
+
         h += `<div class="impact-block">
           <div class="impact-block-hdr">
             <span style="color:var(--n-file);font-size:13px">📄</span>
@@ -2591,6 +2625,7 @@ FORMATO DE RESPUESTA — JSON puro, sin markdown, sin texto adicional:
             <span class="impact-count">${countLabel}</span>
           </div>
           <div class="impact-block-body">`;
+
         fileImpact.changes.forEach(change => {
           const typeLabel = { required:'Requerido', likely:'Probable', optional:'Opcional' };
           h += `<div class="change-item">
@@ -2602,13 +2637,15 @@ FORMATO DE RESPUESTA — JSON puro, sin markdown, sin texto adicional:
             </div>
           </div>`;
         });
+
         h += `</div></div>`;
       });
     } else {
       h += `<div class="empty">No se detectaron impactos directos en el repositorio analizado.</div>`;
     }
+
     h += `</div>`;
-    const resp = $('ai-response'); if (resp) resp.innerHTML = h;
+    $('ai-response').innerHTML = h;
   },
 };
 
@@ -2617,31 +2654,22 @@ FORMATO DE RESPUESTA — JSON puro, sin markdown, sin texto adicional:
 // ════════════════════════════════════════════════
 (function() {
   function makeResizer(handleId, targetId, dir) {
-    const handle = $(handleId);
-    if (!handle) return;
     let startX, startW;
-    handle.addEventListener('mousedown', e => {
-      startX = e.clientX;
-      const target = $(targetId);
-      if (!target) return;
-      startW = target.getBoundingClientRect().width;
+    $(handleId).addEventListener('mousedown', e => {
+      startX = e.clientX; startW = $(targetId).getBoundingClientRect().width;
       const move = ev => {
         const dx = dir==='left' ? ev.clientX-startX : startX-ev.clientX;
-        target.style.width = Math.max(160, startW+dx)+'px';
-        if (typeof Graph !== 'undefined' && Graph._resize) Graph._resize();
+        $(targetId).style.width = Math.max(160, startW+dx)+'px';
       };
-      const up = () => {
-        document.removeEventListener('mousemove',move);
-        document.removeEventListener('mouseup',up);
-        if (typeof Graph !== 'undefined' && Graph._resize) Graph._resize();
-      };
-      document.addEventListener('mousemove',move);
-      document.addEventListener('mouseup',up);
+      const up = () => { document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); Graph._resize?.(); };
+      document.addEventListener('mousemove',move); document.addEventListener('mouseup',up);
     });
   }
   makeResizer('resize-sidebar','sidebar','left');
   makeResizer('resize-detail','detail','right');
 })();
+
+
 
 // Patch fetch to inject auth headers on API calls
 const _origFetch = window.fetch;
@@ -2652,21 +2680,164 @@ window.fetch = function(url, opts = {}) {
   return _origFetch(url, opts);
 };
 
+
+// ── Mobile helpers ──────────────────────────────────────
+UI.toggleSidebar = function() {
+  const sb = document.getElementById("sidebar");
+  const ov = document.getElementById("sidebar-overlay");
+  if (!sb) return;
+  const open = sb.classList.toggle("open");
+  if (ov) ov.classList.toggle("show", open);
+};
+UI.closeDetail = function() {
+  const el = document.getElementById("detail");
+  if (el) el.classList.remove("open");
+};
+UI.openDetail = function() {
+  if (window.innerWidth < 768) {
+    const el = document.getElementById("detail");
+    if (el) el.classList.add("open");
+  }
+};
+// -- UI.renderTrace: local-first (no external API call) --
+UI.renderTrace = async function(path) {
+  const tp = document.getElementById("trace-panel");
+  if (!State.analysis) {
+    tp.innerHTML = '<div class="empty">Carg\u00e1 un repositorio primero.</div>';
+    return;
+  }
+  tp.innerHTML = '<div class="empty">Cargando trazabilidad\u2026</div>';
+  try {
+    const data   = State.analysis;
+    const file   = data.files.find(f => f.path === path);
+    if (!file) throw new Error("Archivo no encontrado");
+    const struct = data.structure?.[path] || { classes: {}, functions: [] };
+    const deps   = data.dependencies?.[path] || { all: [], internal: [], external: [] };
+    const base   = file.name.replace(/\.py$/, "");
+    const ups    = [];
+    for (const [fp, dep] of Object.entries(data.dependencies || {})) {
+      if (fp !== path && (dep.internal || []).includes(base)) ups.push(fp);
+    }
+    const nCls = Object.keys(struct.classes || {}).length;
+    const nFn  = (struct.functions || []).length;
+    let h = '<div class="sec-hdr" style="margin-top:0">\ud83d\udcc4 ' + file.name + '</div>'
+          + '<div class="stats-grid">'
+          + '<div class="stat-box"><div class="stat-num">' + nCls + '</div><div class="stat-lbl">Clases</div></div>'
+          + '<div class="stat-box"><div class="stat-num">' + nFn + '</div><div class="stat-lbl">Funciones</div></div>'
+          + '<div class="stat-box"><div class="stat-num" style="color:' + (ups.length > 0 ? "var(--accent4)" : "var(--muted)") + '">' + ups.length + '</div><div class="stat-lbl">Upstream</div></div>'
+          + '</div>';
+    if (ups.length) {
+      h += '<div class="sec-hdr"><span style="color:var(--accent4)">\u2191 UPSTREAM</span><span style="color:var(--muted);font-weight:400"> ('  + ups.length + ')</span></div>';
+      ups.forEach(fp => {
+        const fn = fp.split("/").pop();
+        const ep = CSS.escape(fp);
+        h += '<div style="background:rgba(251,146,60,.05);border:1px solid rgba(251,146,60,.15);border-radius:6px;margin-bottom:6px">'
+           + '<div class="import-row" style="cursor:pointer;padding:7px 10px" onclick="UI.selectFile(\''  + ep + '\')">'  
+           + '<span style="color:var(--accent4);font-size:10px;padding:1px 6px;border-radius:3px;background:rgba(251,146,60,.12);flex-shrink:0;font-weight:600">upstream</span>'
+           + '<span style="font-weight:600;color:var(--text)">' + fn + '</span></div></div>';
+      });
+    } else {
+      h += '<div class="sec-hdr"><span style="color:var(--accent4)">\u2191 UPSTREAM</span></div>'
+         + '<div style="color:var(--muted);font-size:11px;padding:6px 0 12px">Ning\u00fan archivo importa este \u2014 punto de entrada o script ra\u00edz.</div>';
+    }
+    if (deps.internal?.length) {
+      h += '<div class="sec-hdr"><span style="color:var(--accent2)">\u2193 DOWNSTREAM interno</span> (' + deps.internal.length + ')</div>';
+      deps.internal.forEach(m => { h += '<div class="import-row"><span class="import-type int">interno</span><span>' + m + '</span></div>'; });
+    }
+    if (deps.external?.length) {
+      h += '<div class="sec-hdr"><span style="color:var(--dim)">\u2193 DOWNSTREAM externo</span> (' + deps.external.length + ')</div>';
+      deps.external.forEach(m => { h += '<div class="import-row"><span class="import-type ext">externo</span><span>' + m + '</span></div>'; });
+    }
+    const cls = Object.entries(struct.classes || {});
+    const fns = struct.functions || [];
+    if (cls.length || fns.length) {
+      h += '<div class="sec-hdr">Estructura interna</div>';
+      cls.forEach(([cn, cd]) => {
+        h += '<div class="tree-node-hdr"><span class="tree-icon" style="color:var(--n-class)">\u29e1</span><span class="tree-label">' + cn + '</span></div>';
+        (cd.methods || []).forEach(m => {
+          const mn = typeof m === "string" ? m : m.name;
+          h += '<div class="tree-node-hdr" style="padding-left:16px"><span class="tree-icon" style="color:var(--n-fn)">\u0192</span><span class="tree-label">' + mn + '()</span></div>';
+        });
+      });
+      fns.forEach(fn => {
+        const nm = typeof fn === "string" ? fn : fn.name;
+        h += '<div class="tree-node-hdr"><span class="tree-icon" style="color:var(--accent4)">\u0192</span><span class="tree-label">' + nm + '()</span></div>';
+      });
+    }
+    tp.innerHTML = h;
+  } catch(e) {
+    document.getElementById("trace-panel").innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+};
+
+// Auto-open detail on file select (mobile)
+const _origSelectFile = UI.selectFile.bind(UI);
+UI.selectFile = function(pathEscaped) {
+  _origSelectFile(pathEscaped);
+  UI.openDetail();
+};
+
+// ════════════════════════════════════════════════
+// WEB PROJECT — Files Tab
+// ════════════════════════════════════════════════
+UI.renderWebFilesTab = function(data) {
+  const s = data.summary;
+  let h = `<div class="stats-grid">
+    <div class="stat-box"><div class="stat-num">${s.html_files||0}</div><div class="stat-lbl">HTML</div></div>
+    <div class="stat-box"><div class="stat-num">${s.css_files||0}</div><div class="stat-lbl">CSS</div></div>
+    <div class="stat-box"><div class="stat-num">${s.js_files||0}</div><div class="stat-lbl">JS/TS</div></div>
+  </div>`;
+  (data.files||[]).forEach(f => {
+    const typeIcon = {html:'🌐',css:'🎨',js:'⚡',ts:'⚡'}[f.type]||'📄';
+    const typeColor = {html:'var(--accent)',css:'var(--accent3)',js:'var(--warn)'}[f.type]||'var(--dim)';
+    h += `<div class="card">
+      <div class="card-title" style="color:${typeColor}">${typeIcon} ${f.name} <span class="mode-badge web">${f.type.toUpperCase()}</span></div>`;
+    if (f.type === 'html') {
+      if (f.title) h += `<div class="metric-row"><span class="metric-label">Título</span><span class="metric-value" style="color:var(--text)">${f.title}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Scripts externos</span><span class="metric-value accent">${f.scripts}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Stylesheets</span><span class="metric-value accent">${f.stylesheets}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">IDs únicos</span><span class="metric-value">${f.ids}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Clases CSS usadas</span><span class="metric-value">${f.classes_count}</span></div>`;
+      if (f.forms) h += `<div class="metric-row"><span class="metric-label">Formularios</span><span class="metric-value">${f.forms}</span></div>`;
+      if (f.custom_elements?.length) h += `<div class="metric-row"><span class="metric-label">Web Components</span><span class="metric-value accent">${f.custom_elements.join(', ')}</span></div>`;
+    } else if (f.type === 'css') {
+      h += `<div class="metric-row"><span class="metric-label">Reglas CSS</span><span class="metric-value accent">${f.rule_count}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Variables CSS</span><span class="metric-value">${f.variables}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Media queries</span><span class="metric-value">${f.media_queries}</span></div>`;
+      if (f.keyframes?.length) h += `<div class="metric-row"><span class="metric-label">Animaciones</span><span class="metric-value">${f.keyframes.join(', ')}</span></div>`;
+      if (f.imports?.length) h += `<div class="metric-row"><span class="metric-label">@imports</span><span class="metric-value">${f.imports.join(', ')}</span></div>`;
+    } else if (f.type === 'js') {
+      h += `<div class="metric-row"><span class="metric-label">Funciones</span><span class="metric-value accent">${f.functions?.length||0}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Clases JS</span><span class="metric-value">${f.classes?.length||0}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Imports</span><span class="metric-value">${f.imports?.length||0}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Exports</span><span class="metric-value">${f.exports?.length||0}</span></div>`;
+      if (f.event_listeners?.length) h += `<div class="metric-row"><span class="metric-label">Event listeners</span><span class="metric-value">${f.event_listeners.join(', ')}</span></div>`;
+      if (f.fetch_calls?.length) h += `<div class="metric-row"><span class="metric-label">Fetch calls</span><span class="metric-value warn">${f.fetch_calls.join(', ')}</span></div>`;
+      if (f.api_endpoints?.length) h += `<div class="metric-row"><span class="metric-label">Endpoints API</span><span class="metric-value accent">${f.api_endpoints.join(', ')}</span></div>`;
+    }
+    h += `</div>`;
+  });
+  $('files-panel').innerHTML = h;
+};
+
+
+
 // ════════════════════════════════════════════════
 // RUNTIME ENGINE v4
 // ════════════════════════════════════════════════
 const Runtime = {
-  _mode:       'static',
+  _mode:       'static',   // 'static' | 'live' | 'replay'
   _flowId:     null,
   _frames:     [],
   _frameIdx:   0,
   _liveTimer:  null,
   _eventCount: 0,
 
+  // ── Init ──────────────────────────────────────
   init(flowId) {
     this._flowId = flowId;
     this._mode   = 'static';
-    const rb = $('runtime-bar'); if (rb) rb.classList.add('show');
+    document.getElementById('runtime-bar').classList.add('show');
     this._updateModeButtons();
   },
 
@@ -2679,16 +2850,17 @@ const Runtime = {
     const isLive   = mode === 'live';
 
     ['rt-prev','rt-next','rt-timeline','rt-frame-info','rt-payload'].forEach(id => {
-      const el = $(id); if (el) el.style.display = isReplay ? '' : 'none';
+      const el = document.getElementById(id);
+      if (el) el.style.display = isReplay ? '' : 'none';
     });
-    const cntEl = $('rt-event-count'); if (cntEl) cntEl.style.display = isLive ? '' : 'none';
-    const dot = $('rt-live-dot'); if (dot) dot.classList.toggle('pulsing', isLive);
+    const cntEl = document.getElementById('rt-event-count');
+    if (cntEl) cntEl.style.display = isLive ? '' : 'none';
+
+    const dot = document.getElementById('rt-live-dot');
+    dot.classList.toggle('pulsing', isLive);
 
     if (mode === 'static') {
-      if (typeof Graph !== 'undefined') {
-        Graph.hlFile = null; Graph.selectedNode = null; Graph._applyFilters();
-      }
-      return;
+      Graph.hlFile = null; Graph.selectedNode = null; Graph._applyFilters(); return;
     }
     if (mode === 'live')   { this._startLive(); return; }
     if (mode === 'replay') { this._loadReplay(); }
@@ -2696,10 +2868,12 @@ const Runtime = {
 
   _updateModeButtons() {
     ['static','live','replay'].forEach(m => {
-      const btn = $(`rt-btn-${m}`); if (btn) btn.classList.toggle('active', this._mode === m);
+      const btn = document.getElementById('rt-btn-' + m);
+      if (btn) btn.classList.toggle('active', this._mode === m);
     });
   },
 
+  // ── Live mode ────────────────────────────────
   async _startLive() {
     if (!this._flowId) return;
     const tick = async () => {
@@ -2709,7 +2883,8 @@ const Runtime = {
         if (!r.ok) return;
         const d = await r.json();
         this._eventCount = d.active_nodes?.length || 0;
-        const cntEl = $('rt-event-count'); if (cntEl) cntEl.textContent = `${this._eventCount} nodos activos`;
+        const cntEl = document.getElementById('rt-event-count');
+        if (cntEl) cntEl.textContent = `${this._eventCount} nodos activos`;
         this._highlightActive(d.active_nodes || []);
       } catch(_) {}
     };
@@ -2718,10 +2893,14 @@ const Runtime = {
   },
 
   _highlightActive(activeNodeIds) {
-    if (!State.analysis?.graph || typeof Graph === 'undefined') return;
-    Graph._rtActiveNodes = new Set(activeNodeIds);
+    if (!State.analysis?.graph) return;
+    // Temporarily override Graph highlight with runtime active set
+    const active = new Set(activeNodeIds);
+    Graph._rtActiveNodes = active;
+    Graph._needsRedraw   = true;
   },
 
+  // ── Replay mode ──────────────────────────────
   async _loadReplay() {
     if (!this._flowId) return;
     UI.showLoading('Cargando replay…');
@@ -2732,9 +2911,10 @@ const Runtime = {
       const d = await r.json();
       this._frames   = d.frames || [];
       this._frameIdx = 0;
-      const slider = $('rt-timeline'); if (slider) slider.max = Math.max(0, this._frames.length - 1); if (slider) slider.value = 0;
+      const slider = document.getElementById('rt-timeline');
+      slider.max   = Math.max(0, this._frames.length - 1);
+      slider.value = 0;
       this._renderFrame(0);
-      if (typeof MiniTimeline !== 'undefined' && this._frames.length) MiniTimeline.build(this._frames);
     } catch(e) {
       UI.setStatus('Replay error: ' + e.message, 'err');
     } finally {
@@ -2759,25 +2939,32 @@ const Runtime = {
     const frame = this._frames[idx];
     if (!frame) return;
 
-    const slider = $('rt-timeline'); if (slider) slider.value = idx;
-    const info = $('rt-frame-info'); if (info) info.textContent = `${idx + 1} / ${this._frames.length}`;
-    const payEl = $('rt-payload'); if (payEl) payEl.textContent = frame.payload_preview || '';
+    // Update slider
+    const slider = document.getElementById('rt-timeline');
+    slider.value = idx;
 
-    if (typeof Graph !== 'undefined') {
-      Graph._rtActiveNodes = new Set(frame.active_nodes || []);
-      Graph.selectedNode   = frame.highlight || null;
-      Graph._applyFilters();
-    }
+    // Frame counter
+    const info = document.getElementById('rt-frame-info');
+    info.textContent = `${idx + 1} / ${this._frames.length}`;
 
-    const prevBtn = $('rt-prev'); if (prevBtn) prevBtn.disabled = idx === 0;
-    const nextBtn = $('rt-next'); if (nextBtn) nextBtn.disabled = idx >= this._frames.length - 1;
+    // Payload preview
+    const payEl = document.getElementById('rt-payload');
+    payEl.textContent = frame.payload_preview || '';
 
-    if (typeof MiniTimeline !== 'undefined') MiniTimeline.setCursor(idx);
-    if (typeof HeatMap !== 'undefined') HeatMap.apply(frame.heat || {});
+    // Highlight active nodes on canvas
+    const active = new Set(frame.active_nodes || []);
+    Graph._rtActiveNodes = active;
+    Graph.selectedNode   = frame.highlight || null;
+    Graph._applyFilters();
 
+    // Step buttons
+    document.getElementById('rt-prev').disabled = idx === 0;
+    document.getElementById('rt-next').disabled = idx >= this._frames.length - 1;
+
+    // Detail panel: show event payload
     if (frame.event) {
       const ev = frame.event;
-      const dt = $('detail-title'); if (dt) dt.textContent = ev.action || 'event';
+      $('detail-title').textContent = ev.action || 'event';
       let h = `<div class="card">
         <div class="metric-row"><span class="metric-label">Acción</span><span class="metric-value accent">${ev.action}</span></div>
         <div class="metric-row"><span class="metric-label">Nodo</span><span class="metric-value">${ev.resolved_node_id || ev.node_id}</span></div>
@@ -2789,27 +2976,69 @@ const Runtime = {
           h += `<div class="metric-row"><span class="metric-label">${k}</span><span class="metric-value" style="word-break:break-all;font-size:10px">${String(v).slice(0,80)}</span></div>`;
         }
       }
-      const db = $('detail-body'); if (db) db.innerHTML = h;
+      $('detail-body').innerHTML = h;
     }
   },
 };
+
+// ── Patch Graph._draw to overlay runtime highlights ──────
+const _origDraw = Graph._draw.bind(Graph);
+Graph._draw = function() {
+  _origDraw();
+  if (!Graph._rtActiveNodes?.size) return;
+  const ctx = this.ctx; if(!ctx) return;
+  ctx.save(); ctx.translate(this.ox,this.oy); ctx.scale(this.scale,this.scale);
+  for (const [id, p] of Object.entries(this.pos)) {
+    if (!Graph._rtActiveNodes.has(id)) continue;
+    const node = this.nodes[id]; if (!node) continue;
+    const r = (node.type==='file'?9:6)/this.scale*2 + 6/this.scale;
+    // Glow ring
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(52,211,153,0.7)'; ctx.lineWidth = 2/this.scale; ctx.stroke();
+    // Pulse dot center
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3/this.scale, 0, Math.PI*2);
+    ctx.fillStyle = '#34d399'; ctx.fill();
+  }
+  ctx.restore();
+};
+
+// Patch UI.onAnalysis to init Runtime with the new flow
+const _origOnAnalysis = UI.onAnalysis.bind(UI);
+UI.onAnalysis = function(data) {
+  _origOnAnalysis(data);
+  // Auto-create flow and attach analysis to backend (best-effort)
+  const flowId = 'flow-' + Date.now().toString(36);
+  State.currentFlowId = flowId;
+  fetch(`${API}/flows/${flowId}/attach`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...Auth.headers() },
+    body: JSON.stringify(data),
+  }).catch(() => {});
+  Runtime.init(flowId);
+};
+
 
 // ════════════════════════════════════════════════
 // RUNTIME v4 — Fase 2 extensions
 // ════════════════════════════════════════════════
 
+// ── MiniTimeline ─────────────────────────────────
 const MiniTimeline = {
   _frames: [],
   _width:  0,
+
   build(frames) {
     this._frames = frames;
-    const track = $('mt-track'); if (!track) return;
+    const track = document.getElementById('mt-track');
     if (!frames.length) { track.innerHTML = ''; return; }
-    const mt = $('mini-timeline'); if (mt) mt.classList.add('show');
-    this._width = mt ? mt.offsetWidth : 0;
+    const mt = document.getElementById('mini-timeline');
+    mt.classList.add('show');
+    this._width = mt.offsetWidth;
+
     const t0   = frames[0].timestamp_ms;
     const span = Math.max(frames[frames.length - 1].timestamp_ms - t0, 1);
     let dotsHtml = '';
+
     frames.forEach((f, i) => {
       const pct  = 100 * (f.timestamp_ms - t0) / span;
       const act  = f.event?.action || '';
@@ -2818,41 +3047,59 @@ const MiniTimeline = {
         onmouseenter="MiniTimeline.hover(${i},${pct})" onmouseleave="MiniTimeline.unhover()"></div>`;
     });
     track.innerHTML = dotsHtml;
-    if (mt) mt.addEventListener('click', (e) => {
+
+    mt.addEventListener('click', (e) => {
       const pct = e.offsetX / mt.offsetWidth;
       const idx = Math.round(pct * (frames.length - 1));
       Runtime.scrub(idx);
-      const slider = $('rt-timeline'); if (slider) slider.value = idx;
+      document.getElementById('rt-timeline').value = idx;
     });
   },
+
   setCursor(frameIdx) {
     if (!this._frames.length) return;
     const pct = 100 * frameIdx / Math.max(this._frames.length - 1, 1);
-    const cursor = $('mt-cursor'); if (cursor) cursor.style.left = pct.toFixed(2) + '%';
+    document.getElementById('mt-cursor').style.left = pct.toFixed(2) + '%';
   },
+
   hover(idx, pct) {
-    const f = this._frames[idx]; if (!f) return;
-    const tt = $('mt-tooltip'); if (tt) {
-      tt.style.display = 'block';
-      tt.style.left    = pct.toFixed(1) + '%';
-      tt.textContent   = f.payload_preview || f.event?.action || '';
-    }
+    const f   = this._frames[idx];
+    if (!f) return;
+    const tt  = document.getElementById('mt-tooltip');
+    tt.style.display = 'block';
+    tt.style.left    = pct.toFixed(1) + '%';
+    tt.textContent   = f.payload_preview || f.event?.action || '';
   },
+
   unhover() {
-    const tt = $('mt-tooltip'); if (tt) tt.style.display = 'none';
+    document.getElementById('mt-tooltip').style.display = 'none';
   },
 };
 
+// ── Heat Map overlay on canvas ──────────────────
 const HeatMap = {
   _heat: {},
   _enabled: false,
-  apply(heat) { this._heat = heat || {}; this._enabled = Object.keys(heat).length > 0; },
-  clear() { this._heat = {}; this._enabled = false; },
-  getAlpha(nodeId) { return this._enabled ? (this._heat[nodeId] ?? 0) : null; },
+
+  apply(heat) {
+    this._heat    = heat || {};
+    this._enabled = Object.keys(heat).length > 0;
+  },
+
+  clear() {
+    this._heat = {}; this._enabled = false;
+  },
+
+  getAlpha(nodeId) {
+    if (!this._enabled) return null;
+    return this._heat[nodeId] ?? 0;
+  },
 };
 
+// ── Sessions Panel ───────────────────────────────
 const Sessions = {
   _sessions: [],
+
   async load() {
     try {
       const r = await fetch(`${API}/flows`, { headers: Auth.headers() });
@@ -2862,12 +3109,20 @@ const Sessions = {
       this.render();
     } catch(_) {}
   },
+
   render() {
-    const panel = $('sessions-panel'); if (!panel) return;
-    if (!this._sessions.length) { panel.innerHTML = '<div class="empty">No hay sesiones registradas aún.</div>'; return; }
+    const panel = document.getElementById('sessions-panel');
+    if (!this._sessions.length) {
+      panel.innerHTML = '<div class="empty">No hay sesiones registradas aún.</div>';
+      return;
+    }
     panel.innerHTML = this._sessions.map(s => `
-      <div class="session-card ${s.id === State.currentFlowId ? 'active' : ''}" onclick="Sessions.select('${CSS.escape(s.id)}')">
-        <div class="sc-hdr"><span class="sc-id">${s.id}</span><span class="sc-type-badge ${s.type}">${s.type}</span></div>
+      <div class="session-card ${s.id === State.currentFlowId ? 'active' : ''}"
+           onclick="Sessions.select('${CSS.escape(s.id)}')">
+        <div class="sc-hdr">
+          <span class="sc-id">${s.id}</span>
+          <span class="sc-type-badge ${s.type}">${s.type}</span>
+        </div>
         <div class="sc-metrics">
           <div class="sc-metric"><div class="sc-metric-n">${s.total_events}</div><div class="sc-metric-l">Eventos</div></div>
           <div class="sc-metric"><div class="sc-metric-n">${s.total_nodes}</div><div class="sc-metric-l">Nodos</div></div>
@@ -2876,13 +3131,15 @@ const Sessions = {
       </div>
     `).join('');
   },
+
   async select(idEscaped) {
     const id = this._sessions.find(s => CSS.escape(s.id) === idEscaped)?.id || idEscaped;
     State.currentFlowId = id;
-    if (typeof Runtime !== 'undefined') Runtime.init(id);
+    Runtime.init(id);
     this.render();
     await this.loadCoverage(id);
   },
+
   async loadCoverage(flowId) {
     try {
       const r = await fetch(`${API}/flows/${encodeURIComponent(flowId)}/coverage`, { headers: Auth.headers() });
@@ -2891,53 +3148,147 @@ const Sessions = {
       this.renderCoverageInDetail(d);
     } catch(_) {}
   },
+
   renderCoverageInDetail(cov) {
     const pct  = cov.coverage_pct || 0;
     const circ = 2 * Math.PI * 20;
     const dash = (pct / 100) * circ;
-    let h = `<div class="sec-hdr" style="margin-top:0">Cobertura de código</div>
+    let h = `
+      <div class="sec-hdr" style="margin-top:0">Cobertura de código</div>
       <div class="coverage-ring-wrap">
         <svg class="coverage-ring-svg" width="52" height="52" viewBox="0 0 52 52">
           <circle cx="26" cy="26" r="20" fill="none" stroke="var(--border)" stroke-width="4"/>
           <circle cx="26" cy="26" r="20" fill="none" stroke="var(--accent3)" stroke-width="4"
-            stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}" stroke-linecap="round" transform="rotate(-90 26 26)"/>
+            stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}"
+            stroke-linecap="round" transform="rotate(-90 26 26)"/>
         </svg>
         <div class="coverage-ring-text">
           <div class="cov-pct">${pct.toFixed(1)}%</div>
           <div class="cov-lbl">${cov.covered_nodes} / ${cov.total_static_nodes} nodos</div>
         </div>
       </div>`;
+
     if (cov.error_nodes?.length) {
       h += `<div class="sec-hdr">Nodos con errores (${cov.error_nodes.length})</div>`;
-      cov.error_nodes.slice(0, 5).forEach(n => { h += `<div class="dc-row high"><span class="dc-name">${n}</span><span class="dc-score high">err</span></div>`; });
+      cov.error_nodes.slice(0, 5).forEach(n => {
+        h += `<div class="dc-row high"><span class="dc-name">${n}</span><span class="dc-score high">err</span></div>`;
+      });
     }
+
     if (cov.hot_nodes?.length) {
       h += `<div class="sec-hdr">Más llamados</div>`;
       cov.hot_nodes.slice(0, 6).forEach(n => {
         const dur = n.avg_duration_ms ? ` · ${n.avg_duration_ms.toFixed(1)}ms` : '';
-        h += `<div class="metric-row"><span class="metric-label" style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">${n.name}</span><span class="metric-value accent" style="font-size:10px">${n.call_count}×${dur}</span></div>`;
+        h += `<div class="metric-row">
+          <span class="metric-label" style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">${n.name}</span>
+          <span class="metric-value accent" style="font-size:10px">${n.call_count}×${dur}</span>
+        </div>`;
       });
     }
-    const dt = $('detail-title'); if (dt) dt.textContent = 'Cobertura';
-    const db = $('detail-body'); if (db) db.innerHTML = h;
+    $('detail-title').textContent = 'Cobertura';
+    $('detail-body').innerHTML = h;
   },
+
   async exportSession(flowId) {
     const url = `${API}/flows/${encodeURIComponent(flowId)}/export`;
     window.open(url + '?include_events=true&include_frames=true', '_blank');
   },
 };
 
-// Add Export button to Runtime bar
+// ── Patch Runtime._renderFrame to show call stack + trail ─
+const _origRenderFrame = Runtime._renderFrame.bind(Runtime);
+Runtime._renderFrame = function(idx) {
+  _origRenderFrame(idx);
+  const frame = this._frames[idx];
+  if (!frame) return;
+
+  // Update mini-timeline cursor
+  MiniTimeline.setCursor(idx);
+
+  // Apply heat map
+  HeatMap.apply(frame.heat || {});
+
+  // Append call stack + execution trail to detail
+  const existing = $('detail-body').innerHTML;
+  let extra = '';
+
+  if (frame.call_stack?.length) {
+    extra += `<div class="sec-hdr">Call stack (${frame.stack_depth})</div>
+      <div class="call-stack-panel">`;
+    const stack = [...frame.call_stack].reverse(); // show top first
+    stack.slice(0, 8).forEach((nid, i) => {
+      const lbl = nid.replace(/^(function:|method:|file:)/, '');
+      extra += `<div class="call-stack-frame ${i === 0 ? 'top' : ''}">
+        <span class="stack-idx">${stack.length - i}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lbl}</span>
+      </div>`;
+    });
+    extra += '</div>';
+  }
+
+  if (frame.execution_path?.length > 1) {
+    extra += `<div class="sec-hdr">Execution trail</div><div class="exec-trail">`;
+    frame.execution_path.slice(-8).forEach((nid, i, arr) => {
+      const lbl = nid.replace(/^(function:|method:|file:|dynamic:)/, '').slice(0, 20);
+      const isLatest = i === arr.length - 1;
+      extra += `<span class="trail-node ${isLatest ? 'latest' : ''}">${lbl}</span>`;
+    });
+    extra += '</div>';
+  }
+
+  if (extra) $('detail-body').innerHTML = existing + extra;
+};
+
+// ── Patch Runtime._loadReplay to also build MiniTimeline ──
+const _origLoadReplay = Runtime._loadReplay.bind(Runtime);
+Runtime._loadReplay = async function() {
+  await _origLoadReplay();
+  if (this._frames.length) {
+    MiniTimeline.build(this._frames);
+  }
+};
+
+// ── Patch Graph._draw to overlay heat map ────────────────
+const _origDrawPhase1 = Graph._draw.bind(Graph);
+Graph._draw = function() {
+  _origDrawPhase1();
+  if (!HeatMap._enabled) return;
+  const ctx = this.ctx; if(!ctx) return;
+  ctx.save(); ctx.translate(this.ox, this.oy); ctx.scale(this.scale, this.scale);
+  for (const [id, p] of Object.entries(this.pos)) {
+    const alpha = HeatMap.getAlpha(id);
+    if (alpha === null || alpha < 0.05) continue;
+    const node = this.nodes[id]; if (!node) continue;
+    const r = (node.type === 'file' ? 9 : 6) / this.scale * 2;
+    // Heat ring — amber for hot nodes
+    ctx.beginPath(); ctx.arc(p.x, p.y, r + 4/this.scale, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(251,191,36,${(alpha * 0.8).toFixed(2)})`;
+    ctx.lineWidth = 2/this.scale; ctx.stroke();
+  }
+  ctx.restore();
+};
+
+// ── Patch UI.switchTab to load sessions ──────────────────
+const _origSwitchTab = UI.switchTab.bind(UI);
+UI.switchTab = function(tab) {
+  _origSwitchTab(tab);
+  if (tab === 'sessions') Sessions.load();
+};
+
+// ── Add Export button to Runtime bar ─────────────────────
 (function() {
-  const bar = $('runtime-bar');
+  const bar = document.getElementById('runtime-bar');
   if (!bar) return;
   const btn = document.createElement('button');
   btn.className = 'rt-mode-btn';
   btn.textContent = '⬇ Export';
   btn.title = 'Exportar sesión como JSON';
-  btn.onclick = () => { if (State.currentFlowId) Sessions.exportSession(State.currentFlowId); };
+  btn.onclick = () => {
+    if (State.currentFlowId) Sessions.exportSession(State.currentFlowId);
+  };
   bar.appendChild(btn);
 })();
+
 
 // ════════════════════════════════════════════════
 // AUDIT ENGINE — Fase 3
@@ -2945,188 +3296,593 @@ const Sessions = {
 const Audit = {
   _report:   null,
   _flowId:   null,
-  _filter:   null,
+  _filter:   null,   // active severity filter
 
+  // ── Load projects & sessions into selects ────
   async loadSelects() {
     try {
+      // Projects
       const pr = await fetch(`${API}/projects`, { headers: Auth.headers() });
       if (pr.ok) {
         const pd = await pr.json();
-        const projSel = $('audit-project'); if (projSel) {
-          projSel.innerHTML = '<option value="">Todos los proyectos</option>';
-          (pd.projects || []).forEach(p => { projSel.innerHTML += `<option value="${p.project_id}">${p.project_id} (${p.flow_count} sesiones)</option>`; });
-          projSel.onchange = () => Audit.loadFlows(projSel.value);
-        }
+        const projSel = $('audit-project');
+        projSel.innerHTML = '<option value="">Todos los proyectos</option>';
+        (pd.projects || []).forEach(p => {
+          projSel.innerHTML += `<option value="${p.project_id}">${p.project_id} (${p.flow_count} sesiones)</option>`;
+        });
+        projSel.onchange = () => Audit.loadFlows(projSel.value);
       }
+
+      // All flows
       await Audit.loadFlows('');
     } catch(_) {}
   },
 
   async loadFlows(projectId) {
     try {
-      const url = projectId ? `${API}/projects/${encodeURIComponent(projectId)}/flows` : `${API}/flows`;
+      const url = projectId
+        ? `${API}/projects/${encodeURIComponent(projectId)}/flows`
+        : `${API}/flows`;
       const r = await fetch(url, { headers: Auth.headers() });
       if (!r.ok) return;
       const d = await r.json();
       const flows = d.flows || d.reports || [];
-      const flowSel = $('audit-flow'); const baseSel = $('audit-baseline');
-      if (flowSel) flowSel.innerHTML = '<option value="">Seleccionar sesión…</option>';
-      if (baseSel) baseSel.innerHTML = '<option value="">Sin baseline</option>';
+      const flowSel = $('audit-flow');
+      const baseSel = $('audit-baseline');
+      flowSel.innerHTML = '<option value="">Seleccionar sesión…</option>';
+      baseSel.innerHTML = '<option value="">Sin baseline</option>';
       flows.forEach(f => {
         const label = `${f.id}  (${f.total_events || 0} eventos)`;
-        if (flowSel) flowSel.innerHTML += `<option value="${f.id}">${label}</option>`;
-        if (baseSel) baseSel.innerHTML += `<option value="${f.id}">${label}</option>`;
+        flowSel.innerHTML += `<option value="${f.id}">${label}</option>`;
+        baseSel.innerHTML += `<option value="${f.id}">${label}</option>`;
       });
-      const arb = $('audit-run-btn'); if (arb) arb.disabled = false;
+      $('audit-run-btn').disabled = false;
     } catch(_) {}
   },
 
+  // ── Generate report ──────────────────────────
   async run() {
-    const flowId    = $('audit-flow')?.value;
-    const auditType = $('audit-type')?.value;
-    const baseline  = $('audit-baseline')?.value;
+    const flowId    = $('audit-flow').value;
+    const auditType = $('audit-type').value;
+    const baseline  = $('audit-baseline').value;
     if (!flowId) { UI.setStatus('Seleccioná una sesión primero', 'err'); return; }
+
     this._flowId = flowId;
-    const arb = $('audit-run-btn'); if (arb) arb.disabled = true;
-    const ab = $('audit-body'); if (ab) ab.innerHTML = '<div class="empty" style="padding:24px">Generando reporte…</div>';
+    $('audit-run-btn').disabled = true;
+    $('audit-body').innerHTML = '<div class="empty" style="padding:24px">Generando reporte…</div>';
+
     try {
       const r = await fetch(`${API}/flows/${encodeURIComponent(flowId)}/audit`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...Auth.headers() },
-        body: JSON.stringify({ audit_type: auditType, baseline_flow_id: baseline || null }),
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', ...Auth.headers() },
+        body:    JSON.stringify({
+          audit_type:       auditType,
+          baseline_flow_id: baseline || null,
+        }),
       });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || 'Error al generar reporte'); }
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.detail || 'Error al generar reporte');
+      }
       this._report = await r.json();
       this._filter = null;
       this.renderReport(this._report);
     } catch(e) {
-      if (ab) ab.innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+      $('audit-body').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
     } finally {
-      if (arb) arb.disabled = false;
+      $('audit-run-btn').disabled = false;
     }
   },
 
+  // ── Render report ────────────────────────────
   renderReport(r) {
     const SEV_COLOR = {critical:'#f87171', high:'var(--warn)', medium:'var(--accent4)', low:'var(--accent3)', info:'var(--dim)'};
     const riskFill  = `hsl(${Math.round(120 - r.risk_score * 1.2)},70%,55%)`;
+
     let h = '';
+
+    // ── Risk banner ──────────────────────────────
     h += `<div class="risk-banner">
       <div class="risk-grade ${r.risk_grade}">${r.risk_grade}</div>
       <div class="risk-details">
         <div class="risk-label-txt">${r.risk_label}</div>
-        <div style="font-size:10px;color:var(--muted)">${r.audit_type} · ${r.flow_id} · ${r.generated_at.split('T')[0]} · firma: <code style="color:var(--accent2)">${r.signature}</code></div>
-        <div class="risk-score-bar-wrap"><div class="risk-score-bar"><div class="risk-score-fill" style="width:${r.risk_score}%;background:${riskFill}"></div></div><span class="risk-score-num">${r.risk_score}/100</span></div>
+        <div style="font-size:10px;color:var(--muted)">
+          ${r.audit_type} · ${r.flow_id} · ${r.generated_at.split('T')[0]}
+          · firma: <code style="color:var(--accent2)">${r.signature}</code>
+        </div>
+        <div class="risk-score-bar-wrap">
+          <div class="risk-score-bar">
+            <div class="risk-score-fill" style="width:${r.risk_score}%;background:${riskFill}"></div>
+          </div>
+          <span class="risk-score-num">${r.risk_score}/100</span>
+        </div>
       </div>
       <span class="audit-type-badge ${r.audit_type}">${r.audit_type}</span>
       <button class="btn" onclick="Audit.download()" style="padding:4px 10px;font-size:10px;flex-shrink:0">⬇ JSON</button>
     </div>`;
+
+    // ── Executive summary ──────────────────────
     const ex = r.executive || {};
     h += `<div class="stats-grid" style="margin-bottom:12px">
       <div class="stat-box"><div class="stat-num">${ex.function_calls || 0}</div><div class="stat-lbl">Llamadas</div></div>
       <div class="stat-box"><div class="stat-num" style="color:${ex.exceptions > 0 ? 'var(--accent5)' : 'var(--accent3)'}">${ex.exceptions || 0}</div><div class="stat-lbl">Excepciones</div></div>
       <div class="stat-box"><div class="stat-num">${(r.coverage?.coverage_pct || 0).toFixed(0)}%</div><div class="stat-lbl">Cobertura</div></div>
     </div>`;
+
+    // ── Session diff (if baseline) ─────────────
     if (r.session_diff) {
-      const d = r.session_diff; const delta = d.coverage_delta;
-      h += `<div class="card" style="margin-bottom:12px"><div class="card-title" style="color:var(--accent2)">Comparación con baseline</div>
-        <div class="diff-section"><div class="diff-title">Cobertura</div><div class="diff-item ${delta >= 0 ? 'diff-new' : 'diff-lost'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}% vs sesión anterior</div></div>`;
-      if (d.new_errors.length) { h += `<div class="diff-section"><div class="diff-title">Errores nuevos (${d.new_errors.length})</div>`; d.new_errors.slice(0, 5).forEach(n => { h += `<div class="diff-item diff-err"><span class="diff-pill lost">new</span>${n}</div>`; }); h += '</div>'; }
-      if (d.fixed_errors.length) { h += `<div class="diff-section"><div class="diff-title">Errores resueltos (${d.fixed_errors.length})</div>`; d.fixed_errors.slice(0, 5).forEach(n => { h += `<div class="diff-item diff-fix"><span class="diff-pill new">fix</span>${n}</div>`; }); h += '</div>'; }
+      const d = r.session_diff;
+      const delta = d.coverage_delta;
+      h += `<div class="card" style="margin-bottom:12px">
+        <div class="card-title" style="color:var(--accent2)">Comparación con baseline</div>
+        <div class="diff-section">
+          <div class="diff-title">Cobertura</div>
+          <div class="diff-item ${delta >= 0 ? 'diff-new' : 'diff-lost'}">
+            ${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}% vs sesión anterior
+          </div>
+        </div>`;
+      if (d.new_errors.length) {
+        h += `<div class="diff-section"><div class="diff-title">Errores nuevos (${d.new_errors.length})</div>`;
+        d.new_errors.slice(0, 5).forEach(n => {
+          h += `<div class="diff-item diff-err"><span class="diff-pill lost">new</span>${n}</div>`;
+        });
+        h += '</div>';
+      }
+      if (d.fixed_errors.length) {
+        h += `<div class="diff-section"><div class="diff-title">Errores resueltos (${d.fixed_errors.length})</div>`;
+        d.fixed_errors.slice(0, 5).forEach(n => {
+          h += `<div class="diff-item diff-fix"><span class="diff-pill new">fix</span>${n}</div>`;
+        });
+        h += '</div>';
+      }
       h += '</div>';
     }
+
+    // ── Findings summary pills ─────────────────
     const fs = r.findings_summary || {};
     const total_f = Object.values(fs).reduce((a, b) => a + b, 0);
-    h += `<div class="findings-summary"><span style="font-size:10px;color:var(--muted);align-self:center">${total_f} hallazgo${total_f !== 1 ? 's' : ''}</span>`;
-    ['critical','high','medium','low','info'].forEach(sev => { const cnt = fs[sev] || 0; if (!cnt) return; h += `<div class="sev-pill ${this._filter === sev ? 'active' : ''}" onclick="Audit.filterBySev('${sev}')"><span class="sev-dot" style="background:${SEV_COLOR[sev]}"></span>${sev} (${cnt})</div>`; });
-    h += '</div>';
-    const findings = (r.findings || []).filter(f => !this._filter || f.severity === this._filter);
-    findings.forEach((f, i) => {
-      const remediation = f.remediation ? `<div class="finding-remediation">⤷ ${f.remediation}</div>` : '';
-      const nodes = f.node_ids?.length ? `<div class="finding-nodes">${f.node_ids.slice(0, 8).map(n => `<span class="finding-node-tag" onclick="Audit.highlightNode('${CSS.escape(n)}')" title="${n}">${n.replace(/^(function:|method:|file:|class:)/,'')}</span>`).join('')}</div>` : '';
-      h += `<div class="finding-card"><div class="finding-hdr" onclick="Audit.toggleFinding(${i})"><span class="finding-sev ${f.severity}">${f.severity}</span><span class="finding-title">${f.title}</span><span style="color:var(--muted);font-size:11px">▾</span></div>
-        <div class="finding-body" id="finding-${i}"><p class="finding-desc">${f.description}</p>${nodes}${remediation}</div></div>`;
+    h += `<div class="findings-summary">
+      <span style="font-size:10px;color:var(--muted);align-self:center">${total_f} hallazgo${total_f !== 1 ? 's' : ''}</span>`;
+    ['critical','high','medium','low','info'].forEach(sev => {
+      const cnt = fs[sev] || 0;
+      if (!cnt) return;
+      h += `<div class="sev-pill ${this._filter === sev ? 'active' : ''}" onclick="Audit.filterBySev('${sev}')">
+        <span class="sev-dot" style="background:${SEV_COLOR[sev]}"></span>${sev} (${cnt})
+      </div>`;
     });
-    if (!findings.length) h += `<div class="empty">${this._filter ? `Sin hallazgos de severidad "${this._filter}"` : '¡Sin hallazgos detectados!'}</div>`;
-    const ab = $('audit-body'); if (ab) ab.innerHTML = h;
+    h += '</div>';
+
+    // ── Findings list ──────────────────────────
+    const findings = (r.findings || []).filter(f =>
+      !this._filter || f.severity === this._filter
+    );
+    findings.forEach((f, i) => {
+      const remediation = f.remediation
+        ? `<div class="finding-remediation">⤷ ${f.remediation}</div>` : '';
+      const nodes = f.node_ids?.length
+        ? `<div class="finding-nodes">${f.node_ids.slice(0, 8).map(n =>
+            `<span class="finding-node-tag" onclick="Audit.highlightNode('${CSS.escape(n)}')" title="${n}">${n.replace(/^(function:|method:|file:|class:)/,'')}</span>`
+          ).join('')}</div>` : '';
+      h += `<div class="finding-card">
+        <div class="finding-hdr" onclick="Audit.toggleFinding(${i})">
+          <span class="finding-sev ${f.severity}">${f.severity}</span>
+          <span class="finding-title">${f.title}</span>
+          <span style="color:var(--muted);font-size:11px">▾</span>
+        </div>
+        <div class="finding-body" id="finding-${i}">
+          <p class="finding-desc">${f.description}</p>
+          ${nodes}
+          ${remediation}
+        </div>
+      </div>`;
+    });
+
+    if (!findings.length) {
+      h += `<div class="empty">${this._filter ? `Sin hallazgos de severidad "${this._filter}"` : '¡Sin hallazgos detectados!'}</div>`;
+    }
+
+    $('audit-body').innerHTML = h;
   },
 
-  toggleFinding(idx) { const el = $(`finding-${idx}`); if (el) el.classList.toggle('open'); },
-  filterBySev(sev) { this._filter = this._filter === sev ? null : sev; if (this._report) this.renderReport(this._report); },
-  highlightNode(nodeIdEscaped) {
-    if (!State.analysis?.graph || typeof Graph === 'undefined') return;
-    const nodeId = Object.keys(State.analysis.graph.nodes).find(k => CSS.escape(k) === nodeIdEscaped) || nodeIdEscaped;
-    Graph.selectedNode = nodeId; Graph._applyFilters(); UI.switchTab('graph');
+  toggleFinding(idx) {
+    const el = document.getElementById(`finding-${idx}`);
+    if (el) el.classList.toggle('open');
   },
+
+  filterBySev(sev) {
+    this._filter = this._filter === sev ? null : sev;
+    if (this._report) this.renderReport(this._report);
+  },
+
+  highlightNode(nodeIdEscaped) {
+    if (!State.analysis?.graph) return;
+    const nodeId = Object.keys(State.analysis.graph.nodes)
+      .find(k => CSS.escape(k) === nodeIdEscaped) || nodeIdEscaped;
+    Graph.selectedNode = nodeId;
+    Graph._applyFilters();
+    UI.switchTab('graph');
+  },
+
+  // ── Error clusters ───────────────────────────
+  async loadErrors(flowId) {
+    try {
+      const r = await fetch(`${API}/flows/${encodeURIComponent(flowId)}/errors`, { headers: Auth.headers() });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!d.clusters?.length) return;
+      let h = `<div class="sec-hdr">Clusters de error (${d.clusters.length})</div>
+        <div class="card" style="padding:0">`;
+      d.clusters.slice(0, 15).forEach(c => {
+        h += `<div class="error-cluster" onclick="Audit.loadNodeTimeline('${CSS.escape(flowId)}','${CSS.escape(c.node_id)}')">
+          <span class="ec-type">${c.exception_type}</span>
+          <span class="ec-node">${c.node_id.replace(/^(function:|method:|file:)/,'')}</span>
+          <span class="ec-count">${c.count}×</span>
+        </div>`;
+      });
+      h += '</div>';
+      $('audit-body').innerHTML += h;
+    } catch(_) {}
+  },
+
   async loadNodeTimeline(flowIdEscaped, nodeIdEscaped) {
     const flowId  = flowIdEscaped.replace(/\/g, '');
     const nodeId  = nodeIdEscaped.replace(/\/g, '');
     try {
-      const r = await fetch(`${API}/flows/${encodeURIComponent(flowId)}/nodes/${encodeURIComponent(nodeId)}/timeline?limit=50`, { headers: Auth.headers() });
+      const r = await fetch(
+        `${API}/flows/${encodeURIComponent(flowId)}/nodes/${encodeURIComponent(nodeId)}/timeline?limit=50`,
+        { headers: Auth.headers() }
+      );
       if (!r.ok) return;
       const d = await r.json();
-      const dt = $('detail-title'); if (dt) dt.textContent = nodeId.replace(/^(function:|method:|file:)/,'');
+      $('detail-title').textContent = nodeId.replace(/^(function:|method:|file:)/,'');
       let h = `<div class="sec-hdr" style="margin-top:0">Timeline del nodo (${d.events.length})</div>`;
       d.events.forEach(ev => {
         const col = ev.action === 'exception' ? 'var(--accent5)' : ev.action === 'function_return' ? 'var(--accent3)' : 'var(--accent)';
-        h += `<div class="metric-row" style="padding:3px 0"><span class="metric-label" style="font-size:9px;color:var(--muted)">${new Date(ev.timestamp_ms).toISOString().split('T')[1].slice(0,12)}</span><span style="font-size:10px;color:${col}">${ev.action}</span></div>`;
-        const dur = ev.payload?.duration_ms; if (dur !== undefined) h += `<div style="font-size:9px;color:var(--muted);text-align:right;padding:0 0 3px">${dur.toFixed(1)}ms</div>`;
+        h += `<div class="metric-row" style="padding:3px 0">
+          <span class="metric-label" style="font-size:9px;color:var(--muted)">${new Date(ev.timestamp_ms).toISOString().split('T')[1].slice(0,12)}</span>
+          <span style="font-size:10px;color:${col}">${ev.action}</span>
+        </div>`;
+        const dur = ev.payload?.duration_ms;
+        if (dur !== undefined) {
+          h += `<div style="font-size:9px;color:var(--muted);text-align:right;padding:0 0 3px">${dur.toFixed(1)}ms</div>`;
+        }
       });
-      const db = $('detail-body'); if (db) db.innerHTML = h;
+      $('detail-body').innerHTML = h;
     } catch(_) {}
   },
+
+  // ── Full-text search ─────────────────────────
   async search(query) {
     if (!query.trim()) return;
-    const sev = $('audit-search-sev')?.value;
+    const sev = $('audit-search-sev').value;
     UI.showLoading('Buscando…');
     try {
-      const params = new URLSearchParams({ q: query, limit: 100 }); if (sev) params.set('severity', sev);
-      const flowId = $('audit-flow')?.value; if (flowId) params.set('flow_id', flowId);
+      const params = new URLSearchParams({ q: query, limit: 100 });
+      if (sev) params.set('severity', sev);
+      const flowId = $('audit-flow').value;
+      if (flowId) params.set('flow_id', flowId);
       const r = await fetch(`${API}/search/events?${params}`, { headers: Auth.headers() });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
       this.renderSearchResults(d);
     } catch(e) {
-      const ab = $('audit-body'); if (ab) ab.innerHTML = `<div class="empty">Error: ${e.message}</div>`;
-    } finally { UI.hideLoading(); }
+      $('audit-body').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+    } finally {
+      UI.hideLoading();
+    }
   },
+
   renderSearchResults(d) {
     let h = `<div style="font-size:11px;color:var(--dim);padding:0 2px 10px">${d.count} resultado${d.count !== 1 ? 's' : ''} para "${d.query}"</div>`;
-    if (!d.results?.length) h += '<div class="empty">Sin resultados.</div>';
-    else {
+    if (!d.results?.length) {
+      h += '<div class="empty">Sin resultados.</div>';
+    } else {
       h += '<div class="card" style="padding:0">';
       d.results.forEach(ev => {
         const ts  = new Date(ev.timestamp_ms).toISOString().split('T')[1].slice(0,12);
         const nid = (ev.resolved_node_id || ev.node_id).replace(/^(function:|method:|file:)/,'');
         const pay = JSON.stringify(ev.payload || {}).slice(0, 80);
         h += `<div class="search-result-row" onclick="Audit.loadNodeTimeline('${CSS.escape(ev.flow_id_source || ev.flow_id)}','${CSS.escape(ev.resolved_node_id || ev.node_id)}')">
-          <span class="sr-action">${ev.action}</span><span class="sr-node">${nid}</span><span class="sr-payload">${pay}</span><span class="sr-ts">${ts}</span></div>`;
+          <span class="sr-action">${ev.action}</span>
+          <span class="sr-node">${nid}</span>
+          <span class="sr-payload">${pay}</span>
+          <span class="sr-ts">${ts}</span>
+        </div>`;
       });
       h += '</div>';
     }
-    const ab = $('audit-body'); if (ab) ab.innerHTML = h;
+    $('audit-body').innerHTML = h;
   },
+
+  // ── Download report ──────────────────────────
   download() {
     if (!this._report) return;
     const blob = new Blob([JSON.stringify(this._report, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `audit_${this._report.audit_id}.json`; a.click();
+    const a = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `audit_${this._report.audit_id}.json`;
+    a.click();
   },
+};
+
+// Patch switchTab to load audit data
+const _origSwitchTabAudit = UI.switchTab.bind(UI);
+UI.switchTab = function(tab) {
+  _origSwitchTabAudit(tab);
+  if (tab === 'audit') Audit.loadSelects();
+};
+
+// Patch onAnalysis to set audit flow selector
+const _origOnAnalysisAudit = UI.onAnalysis.bind(UI);
+UI.onAnalysis = function(data) {
+  _origOnAnalysisAudit(data);
+  // Pre-fill audit flow selector with current flow
+  setTimeout(() => {
+    const sel = $('audit-flow');
+    if (sel && State.currentFlowId) {
+      // Add option if not present
+      if (![...sel.options].some(o => o.value === State.currentFlowId)) {
+        sel.innerHTML += `<option value="${State.currentFlowId}">${State.currentFlowId} (actual)</option>`;
+      }
+      sel.value = State.currentFlowId;
+      $('audit-run-btn').disabled = false;
+    }
+  }, 500);
 };
 
 // ════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════
+
+// ==============================================
+// INSTRUMENTER — Fase 4
+// ==============================================
+const Instrument = {
+  _method:   'file',
+  _files:    {},      // {filename: source}
+  _previews: {},      // {filename: preview_data}
+  _isZip:    false,
+  _zipBytes: null,
+
+  setMethod(m) {
+    this._method = m;
+    ['file','zip','paste'].forEach(mm => {
+      const btn = document.getElementById('instr-m-' + mm);
+      if (btn) btn.classList.toggle('active', mm === m);
+    });
+    const isZip   = m === 'zip';
+    const isPaste = m === 'paste';
+    const drop    = document.getElementById('instr-drop');
+    const paste   = document.getElementById('instr-paste-area');
+    if (drop)  drop.style.display  = isPaste ? 'none' : 'block';
+    if (paste) paste.style.display = isPaste ? 'block' : 'none';
+    const fi = document.getElementById('instr-file-input');
+    if (fi) fi.accept = isZip ? '.zip' : '.py';
+    const dt = document.getElementById('instr-drop-title');
+    const ds = document.getElementById('instr-drop-sub');
+    if (dt) dt.textContent = isZip ? 'Arrastre su .zip aqui' : 'Arrastre archivos .py aqui';
+    if (ds) ds.textContent = isZip ? 'o haga clic para seleccionar un .zip' : 'o haga clic para seleccionar archivos Python';
+  },
+
+  onDragOver(e)  { e.preventDefault(); document.getElementById('instr-drop').classList.add('drag'); },
+  onDragLeave()  { document.getElementById('instr-drop').classList.remove('drag'); },
+  onDrop(e)      { e.preventDefault(); document.getElementById('instr-drop').classList.remove('drag'); this.handleFiles(e.dataTransfer.files); },
+  onFileInput(e) { this.handleFiles(e.target.files); },
+
+  handleFiles(fileList) {
+    const files = Array.from(fileList);
+    if (!files.length) return;
+    const zip = files.find(f => f.name.endsWith('.zip'));
+    if (zip || this._method === 'zip') {
+      this._handleZip(zip || files[0]);
+    } else {
+      this._handlePyFiles(files.filter(f => f.name.endsWith('.py')));
+    }
+  },
+
+  async _handlePyFiles(files) {
+    this._isZip = false;
+    this._files = {};
+    for (const f of files) {
+      this._files[f.name] = await f.text();
+    }
+    if (!Object.keys(this._files).length) return;
+    this._showOriginal(Object.keys(this._files)[0]);
+    await this.preview();
+  },
+
+  async _handleZip(file) {
+    this._isZip = true;
+    this._zipBytes = await file.arrayBuffer();
+    document.getElementById('instr-orig-stats').textContent = file.name + ' (' + (file.size/1024).toFixed(0) + ' KB)';
+    document.getElementById('instr-upload-zone').style.display = 'none';
+    document.getElementById('instr-editor').style.display = 'block';
+    document.getElementById('instr-orig-code').textContent = 'ZIP cargado: ' + file.name;
+    await this.previewZip();
+  },
+
+  _showOriginal(filename) {
+    const src = this._files[filename] || '';
+    document.getElementById('instr-upload-zone').style.display = 'none';
+    document.getElementById('instr-editor').style.display = 'block';
+    const lines = src.split('
+');
+    let html = '';
+    lines.forEach((line, i) => {
+      html += '<div class="code-line context"><span class="code-ln">' + (i+1) + '</span><span class="code-txt">' + _escHtml(line) + '</span></div>';
+    });
+    document.getElementById('instr-orig-code').innerHTML = html;
+    document.getElementById('instr-stats').style.display = 'flex';
+    document.getElementById('instr-orig-stats').textContent = lines.length + ' lineas';
+  },
+
+  async previewPaste() {
+    const src = document.getElementById('instr-paste-input').value.trim();
+    if (!src) return;
+    this._files = { 'module.py': src };
+    this._isZip = false;
+    this._showOriginal('module.py');
+    await this.preview();
+  },
+
+  async preview() {
+    const filename = Object.keys(this._files)[0];
+    const source   = this._files[filename];
+    if (!source) return;
+
+    const flowId   = document.getElementById('instr-flow-id').value.trim() || 'default';
+    const endpoint = document.getElementById('instr-endpoint').value.trim() || '';
+    const prevEl   = document.getElementById('instr-preview');
+    prevEl.innerHTML = '<div class="empty" style="padding:20px">Generando previa…</div>';
+
+    try {
+      const r = await fetch(API + '/instrument/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...Auth.headers() },
+        body: JSON.stringify({ source, filename, flow_id: flowId, endpoint }),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      this._previews[filename] = d;
+      this._renderPreview(filename, d);
+    } catch(e) {
+      prevEl.innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+    }
+  },
+
+  async previewZip() {
+    const prevEl = document.getElementById('instr-preview');
+    prevEl.innerHTML = '<div class="empty" style="padding:20px">Instrumentando ZIP…</div>';
+    const flowId   = document.getElementById('instr-flow-id').value.trim() || 'default';
+    const endpoint = document.getElementById('instr-endpoint').value.trim() || '';
+    try {
+      const fd = new FormData();
+      fd.append('file', new Blob([this._zipBytes], {type:'application/zip'}), 'project.zip');
+      fd.append('flow_id', flowId);
+      if (endpoint) fd.append('endpoint', endpoint);
+      const r = await fetch(API + '/instrument/zip', {
+        method: 'POST', headers: Auth.headers(), body: fd,
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || 'HTTP ' + r.status);
+      }
+      const blob = await r.blob();
+      this._instrumentedBlob = blob;
+      const nFiles = r.headers.get('X-Files-Instrumented') || '?';
+      const nFns   = r.headers.get('X-Functions-Instrumented') || '?';
+      prevEl.innerHTML = '<div style="padding:20px">'
+        + '<div class="stat-box" style="margin-bottom:12px">'
+        + '<div class="stat-num" style="color:var(--accent3)">' + nFiles + '</div>'
+        + '<div class="stat-lbl">Archivos instrumentados</div></div>'
+        + '<div class="stat-box">'
+        + '<div class="stat-num" style="color:var(--accent3)">' + nFns + '</div>'
+        + '<div class="stat-lbl">Funciones instrumentadas</div></div>'
+        + '</div>';
+      document.getElementById('instr-dl-info').textContent = nFiles + ' archivos, ' + nFns + ' funciones';
+      const dlBar = document.getElementById('instr-download-bar');
+      dlBar.classList.add('show');
+      document.getElementById('instr-apply-btn').style.display = '';
+    } catch(e) {
+      prevEl.innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+    }
+  },
+
+  _renderPreview(filename, d) {
+    const prevEl = document.getElementById('instr-preview');
+    if (d.parse_error) {
+      prevEl.innerHTML = '<div class="empty" style="padding:20px;color:var(--accent5)">Error de sintaxis — no se puede instrumentar este archivo.</div>';
+      return;
+    }
+    let html = '<div class="code-pane">';
+    (d.hunks || []).forEach(hk => {
+      const cls = hk.type === 'added' ? 'added' : 'context';
+      const ln  = hk.type === 'added' ? '+' : hk.line;
+      html += '<div class="code-line ' + cls + '"><span class="code-ln">' + ln + '</span><span class="code-txt">' + _escHtml(hk.content || '') + '</span></div>';
+    });
+    html += '</div>';
+    prevEl.innerHTML = html;
+
+    const addedLines = d.added_lines || 0;
+    const fnCount    = d.functions_instrumented || 0;
+    document.getElementById('instr-prev-stats').textContent = fnCount + ' funciones · +' + addedLines + ' lineas';
+    document.getElementById('instr-stats').style.display = 'flex';
+    document.getElementById('instr-stats').innerHTML =
+      '<div class="instr-stat"><span class="instr-stat-val">' + fnCount + '</span><span class="instr-stat-lbl"> funciones instrumentadas</span></div>' +
+      '<div class="instr-stat"><span class="instr-stat-val">+' + addedLines + '</span><span class="instr-stat-lbl"> lineas agregadas</span></div>' +
+      '<div class="instr-stat"><span class="instr-stat-val">' + d.instrumented_lines + '</span><span class="instr-stat-lbl"> lineas totales</span></div>';
+
+    const dlBar = document.getElementById('instr-download-bar');
+    dlBar.classList.add('show');
+    document.getElementById('instr-dl-info').textContent = fnCount + ' funciones en ' + Object.keys(this._files).length + ' archivo(s)';
+    document.getElementById('instr-apply-btn').style.display = '';
+  },
+
+  async applyAndDownload() {
+    if (this._isZip && this._instrumentedBlob) {
+      const a = document.createElement('a');
+      a.href     = URL.createObjectURL(this._instrumentedBlob);
+      a.download = 'instrumented_project.zip';
+      a.click();
+      return;
+    }
+    const flowId   = document.getElementById('instr-flow-id').value.trim() || 'default';
+    const endpoint = document.getElementById('instr-endpoint').value.trim() || '';
+    const filename = Object.keys(this._files)[0];
+    const source   = this._files[filename];
+    if (!source) return;
+    try {
+      const r = await fetch(API + '/instrument/source', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...Auth.headers() },
+        body: JSON.stringify({ source, filename, flow_id: flowId, endpoint }),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const blob = new Blob([d.instrumented_source], { type: 'text/plain' });
+      const a    = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = 'instrumented_' + filename;
+      a.click();
+    } catch(e) {
+      alert('Error: ' + e.message);
+    }
+  },
+
+  downloadTracker() { window.open(API + '/instrument/tracker.py', '_blank'); },
+  downloadProxy(adv) { window.open(API + '/instrument/proxy.js' + (adv ? '?advanced=true' : ''), '_blank'); },
+};
+
+function _escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Patch switchTab to not break on new tab
+const _origSwitchTabI = UI.switchTab.bind(UI);
+UI.switchTab = function(tab) {
+  _origSwitchTabI(tab);
+};
+
+// =================================================
+// GLOBAL EXPOSER -- Fix onclick handlers in HTML
+// =================================================
+window.UI           = UI;
+window.Graph        = Graph;
+window.AI           = AI;
+window.Runtime      = Runtime;
+window.Sessions     = Sessions;
+window.Audit        = Audit;
+window.Instrument   = Instrument;
+window.MiniTimeline = MiniTimeline;
+window.HeatMap      = HeatMap;
+window.Tooltip      = Tooltip;
+window.Auth         = Auth;
+
 Tooltip.init();
 UI.setStatus('Listo — subí un repositorio para comenzar');
+// Auth init (check if login required)
 Auth.init();
 
-window.UI = UI;
-window.Graph = Graph;
-window.AI = AI;
-window.Runtime = Runtime;
-window.Sessions = Sessions;
-window.Audit = Audit;
-window.Auth = Auth;
-window.MiniTimeline = MiniTimeline;
-window.HeatMap = HeatMap;
 </script>
 </body>
 </html>

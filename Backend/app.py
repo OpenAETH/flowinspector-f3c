@@ -696,6 +696,10 @@ try:
     from runtime.correlator     import get_correlator, invalidate_correlator
     from runtime.replay         import ReplayEngine, HotPathAnalyzer, CoverageReport, SessionDiff
     from runtime.audit          import AuditBuilder, build_multi_audit
+    from runtime.instrumenter   import (
+        InMemoryInstrumenter, ZipInstrumenter, build_preview,
+        FlowImportHook, DiffInstrumenter,
+    )
     from runtime.session_export import SessionExporter
     from runtime.models         import (
         FlowEvent as _FlowEvent, ActionType as _ActionType,
@@ -1201,6 +1205,168 @@ async def search_events(
     results = _store.search_events(q, project_id=project_id, from_ms=from_ms,
                                    to_ms=to_ms, severity=severity, limit=min(limit, 500))
     return JSONResponse(content={"query": q, "count": len(results), "results": results})
+
+
+
+# ═══════════════════════════════════════════════════════════
+# INSTRUMENTATION — Fase 4  (auto-instrumentación)
+# ═══════════════════════════════════════════════════════════
+
+class _InstrReq(BaseModel):
+    source:        str
+    filename:      str = "module.py"
+    flow_id:       str = "default"
+    endpoint:      str = ""
+    skip_patterns: List[str] = []
+    min_body_lines: int = 2
+
+@app.post("/instrument/preview")
+async def instrument_preview(req: _InstrReq, _auth=Depends(require_auth)):
+    """
+    Previsualiza los cambios que el instrumenter aplicaria al codigo.
+    Devuelve diff-like hunks para el frontend code viewer.
+    NO modifica ningun archivo.
+    """
+    if not _RUNTIME_OK:
+        raise HTTPException(501, "Runtime module not available.")
+    endpoint = req.endpoint or f"{os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:10000')}/flow-events/batch"
+    try:
+        from runtime.instrumenter import build_preview
+        preview = build_preview(
+            source   = req.source,
+            filename = req.filename,
+            flow_id  = req.flow_id,
+            endpoint = endpoint,
+        )
+        return JSONResponse(content=preview)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/instrument/source")
+async def instrument_source(req: _InstrReq, _auth=Depends(require_auth)):
+    """
+    Instrumenta un archivo Python pasado como string.
+    Devuelve el codigo instrumentado listo para usar.
+    """
+    if not _RUNTIME_OK:
+        raise HTTPException(501, "Runtime module not available.")
+    endpoint = req.endpoint or f"{os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:10000')}/flow-events/batch"
+    try:
+        instr = InMemoryInstrumenter(
+            flow_id        = req.flow_id,
+            endpoint       = endpoint,
+            skip_patterns  = req.skip_patterns or ["__"],
+            min_body_lines = req.min_body_lines,
+        )
+        instrumented, stats = instr.instrument(req.source, filename=req.filename)
+        return JSONResponse(content={
+            "instrumented_source": instrumented,
+            "stats":               stats,
+        })
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/instrument/zip")
+async def instrument_zip(
+    file:     UploadFile = File(...),
+    flow_id:  str = "default",
+    endpoint: str = "",
+    _auth = Depends(require_auth),
+):
+    """
+    Recibe un .zip con archivos .py, devuelve un .zip instrumentado.
+    flowinspector_track.py se agrega automaticamente al root del ZIP.
+    """
+    if not _RUNTIME_OK:
+        raise HTTPException(501, "Runtime module not available.")
+    if not file.filename.endswith(".zip"):
+        raise HTTPException(400, "Se requiere un archivo .zip")
+    endpoint = endpoint or f"{os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:10000')}/flow-events/batch"
+    try:
+        zip_bytes = await file.read()
+        instr     = ZipInstrumenter(flow_id=flow_id, endpoint=endpoint)
+        result_bytes, report = instr.instrument_zip(zip_bytes)
+        from fastapi.responses import Response
+        return Response(
+            content    = result_bytes,
+            media_type = "application/zip",
+            headers    = {
+                "Content-Disposition": f"attachment; filename=instrumented_{file.filename}",
+                "X-Files-Instrumented": str(report["files_instrumented"]),
+                "X-Functions-Instrumented": str(report["total_functions_instrumented"]),
+            }
+        )
+    except Exception as e:
+        import traceback as _tb
+        raise HTTPException(500, f"{type(e).__name__}: {e}\n{_tb.format_exc()}")
+
+
+@app.post("/instrument/upload")
+async def instrument_upload(
+    files:    List[UploadFile] = File(...),
+    flow_id:  str = "default",
+    endpoint: str = "",
+    _auth = Depends(require_auth),
+):
+    """
+    Recibe archivos .py sueltos, devuelve cada uno instrumentado.
+    """
+    if not _RUNTIME_OK:
+        raise HTTPException(501, "Runtime module not available.")
+    endpoint = endpoint or f"{os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:10000')}/flow-events/batch"
+    instr   = InMemoryInstrumenter(flow_id=flow_id, endpoint=endpoint)
+    results = {}
+    for uf in files:
+        if not uf.filename.endswith(".py"):
+            continue
+        source = (await uf.read()).decode("utf-8", errors="replace")
+        instrumented, stats = instr.instrument(source, filename=uf.filename)
+        results[uf.filename] = {
+            "instrumented_source": instrumented,
+            "stats":               stats,
+        }
+    if not results:
+        raise HTTPException(400, "No se encontraron archivos .py")
+    return JSONResponse(content={"files": results, "flow_id": flow_id, "endpoint": endpoint})
+
+
+@app.get("/instrument/tracker.py")
+async def download_tracker(_auth=Depends(require_auth)):
+    """
+    Descarga flowinspector_track.py para copiarlo al proyecto del usuario.
+    """
+    tracker_path = pathlib.Path(__file__).parent.parent / "flowinspector_track.py"
+    if not tracker_path.exists():
+        tracker_path = pathlib.Path(__file__).parent / "runtime" / "tracker.py"
+    if not tracker_path.exists():
+        raise HTTPException(404, "tracker.py no encontrado")
+    from fastapi.responses import Response
+    with open(tracker_path, encoding="utf-8") as f:
+        source = f.read()
+    return Response(
+        content    = source,
+        media_type = "text/plain",
+        headers    = {"Content-Disposition": "attachment; filename=flowinspector_track.py"},
+    )
+
+
+@app.get("/instrument/proxy.js")
+async def download_proxy(advanced: bool = False, _auth=Depends(require_auth)):
+    """Descarga el proxy JS (basico o avanzado) para inyectar en proyectos web."""
+    fname = "flow-inspector-proxy-advanced.js" if advanced else "flow-inspector-proxy.js"
+    js_path = pathlib.Path(__file__).parent.parent / "Frontend" / fname
+    if not js_path.exists():
+        raise HTTPException(404, f"{fname} no encontrado")
+    from fastapi.responses import Response
+    with open(js_path, encoding="utf-8") as f:
+        source = f.read()
+    return Response(
+        content    = source,
+        media_type = "application/javascript",
+        headers    = {"Content-Disposition": f"attachment; filename={fname}"},
+    )
 
 
 # ─── SERVE FRONTEND (cloud mode) ─────────────────────────
