@@ -1,0 +1,3444 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Flow Inspector</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#0d0f14; --bg2:#13161e; --bg3:#1a1e2a; --panel:#1e2230;
+  --border:#2a2f40; --border2:#353b52;
+  --text:#d4d8e8; --dim:#6b7090; --muted:#3d4258;
+  --accent:#7eb8f7; --accent2:#a78bfa; --accent3:#34d399;
+  --accent4:#fb923c; --accent5:#f87171; --warn:#fbbf24;
+  --dead-hi:#f87171; --dead-md:#fbbf24; --dead-lo:#d97706;
+  --n-file:#60a5fa; --n-class:#a78bfa; --n-fn:#34d399; --n-mod:#6b7280; --n-ext:#374151;
+  --ai:#c084fc; --ai2:#818cf8; --ai-bg:rgba(192,132,252,.07);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);font-size:13px;line-height:1.6}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* ── Layout ── */
+#app{display:flex;flex-direction:column;height:100vh}
+#topbar{display:flex;align-items:center;gap:16px;padding:0 20px;height:48px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;z-index:100}
+.logo{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:var(--accent);letter-spacing:.5px;white-space:nowrap}
+.logo span{color:var(--accent2)}
+.top-sep{width:1px;height:20px;background:var(--border);flex-shrink:0}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);border-radius:5px;cursor:pointer;font-family:inherit;font-size:12px;transition:all .15s;white-space:nowrap}
+.btn:hover{background:var(--panel);border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.btn.primary:hover{background:#60a5fa}
+.btn.ai-btn{background:var(--ai-bg);border-color:var(--ai);color:var(--ai)}
+.btn.ai-btn:hover{background:rgba(192,132,252,.15);border-color:#d8b4fe;color:#d8b4fe}
+#status-bar-top{margin-left:auto;color:var(--dim);font-size:11px}
+#sdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--border2);margin-right:6px;transition:background .3s}
+#sdot.ok{background:var(--accent3)}
+#sdot.err{background:var(--accent5)}
+#sdot.loading{background:var(--warn);animation:pulse .8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+#main{display:flex;flex:1;overflow:hidden}
+
+/* ── Sidebar ── */
+#sidebar{width:220px;min-width:180px;max-width:320px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.sidebar-hdr{padding:8px 12px;font-size:10px;font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border);flex-shrink:0}
+.search-wrap{padding:8px;border-bottom:1px solid var(--border);flex-shrink:0}
+.search-input{width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);border-radius:5px;padding:5px 10px;font-family:inherit;font-size:11px;outline:none;transition:border .15s}
+.search-input:focus{border-color:var(--accent)}
+#file-list{flex:1;overflow-y:auto;padding:4px 0}
+.file-item{display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;border-left:2px solid transparent;transition:all .12s}
+.file-item:hover{background:var(--bg3);border-left-color:var(--border2)}
+.file-item.active{background:var(--panel);border-left-color:var(--accent)}
+.fi-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.fi-badge{font-size:9px;padding:1px 5px;border-radius:10px;background:var(--bg);color:var(--dim);flex-shrink:0}
+.fi-badge.warn{background:#3d2400;color:var(--warn)}
+.fi-badge.err{background:#3d1515;color:var(--accent5)}
+
+/* ── Center ── */
+#center{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#tab-bar{display:flex;align-items:center;gap:2px;padding:0 12px;height:36px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0}
+.tab{padding:4px 14px;border-radius:4px 4px 0 0;cursor:pointer;font-size:11px;color:var(--dim);border:1px solid transparent;border-bottom:none;transition:all .12s;background:transparent;font-family:inherit}
+.tab:hover{color:var(--text)}
+.tab.active{background:var(--bg);border-color:var(--border);color:var(--accent);font-weight:600}
+.tab.ai-tab.active{color:var(--ai);border-color:var(--border)}
+.tab-panel{display:none;flex:1;overflow:hidden}
+.tab-panel.active{display:flex;flex-direction:column}
+
+/* ── Graph ── */
+#graph-wrap{flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column}
+#graph-filter-bar{
+  display:none;flex-shrink:0;align-items:center;gap:4px;flex-wrap:wrap;
+  padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);
+  z-index:20;
+}
+#graph-filter-bar.show{display:flex}
+.filter-sep{width:1px;height:16px;background:var(--border);margin:0 4px;flex-shrink:0}
+.fcheck{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid var(--border2);border-radius:4px;cursor:pointer;font-size:10px;color:var(--dim);background:var(--bg3);user-select:none;transition:all .12s}
+.fcheck:hover{border-color:var(--border2);color:var(--text)}
+.fcheck.on{border-color:var(--accent2);color:var(--text);background:rgba(167,139,250,.08)}
+.fcheck .fdot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.view-btn{padding:3px 9px;border:1px solid var(--border2);border-radius:4px;cursor:pointer;font-size:10px;color:var(--dim);background:var(--bg3);font-family:inherit;transition:all .12s}
+.view-btn:hover{color:var(--text)}
+.view-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(126,184,247,.08)}
+.filter-label{font-size:9px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;padding:0 2px}
+#graph-canvas{width:100%;flex:1;cursor:grab;display:none}
+#graph-canvas:active{cursor:grabbing}
+#graph-controls{position:absolute;bottom:12px;right:12px;display:none;flex-direction:column;gap:4px;z-index:10}
+.graph-btn{width:28px;height:28px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);border-radius:5px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .12s}
+.graph-btn:hover{background:var(--panel);border-color:var(--accent);color:var(--accent)}
+#graph-legend{position:absolute;top:12px;left:12px;z-index:10;background:rgba(13,15,20,.85);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:10px;display:none}
+.legend-row{display:flex;align-items:center;gap:6px;margin:2px 0}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* ── Rich Tooltip ── */
+#rich-tooltip{
+  position:fixed;z-index:9999;pointer-events:none;
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:8px;padding:0;font-size:11px;
+  box-shadow:0 8px 32px rgba(0,0,0,.6),0 0 0 1px rgba(126,184,247,.08);
+  display:none;max-width:280px;min-width:180px;
+  animation:tooltipIn .12s ease;
+}
+@keyframes tooltipIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.tt-header{padding:8px 12px 6px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.tt-icon{font-size:14px;flex-shrink:0}
+.tt-title{font-family:'Syne',sans-serif;font-weight:700;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tt-type{font-size:9px;padding:1px 6px;border-radius:3px;flex-shrink:0;margin-left:auto}
+.tt-type.file{background:rgba(96,165,250,.15);color:var(--n-file)}
+.tt-type.class{background:rgba(167,139,250,.15);color:var(--n-class)}
+.tt-type.function{background:rgba(52,211,153,.15);color:var(--n-fn)}
+.tt-type.module{background:rgba(107,114,128,.15);color:var(--n-mod)}
+.tt-body{padding:8px 12px}
+.tt-row{display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:10px}
+.tt-label{color:var(--dim)}
+.tt-val{color:var(--text);font-weight:600}
+.tt-val.ok{color:var(--accent3)}
+.tt-val.warn{color:var(--warn)}
+.tt-val.err{color:var(--accent5)}
+.tt-val.accent{color:var(--accent)}
+.tt-sep{height:1px;background:var(--border);margin:4px 0}
+.tt-calls{padding:4px 0 2px;font-size:10px;color:var(--dim)}
+.tt-call-row{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:10px;color:var(--text)}
+.tt-call-arrow{color:var(--muted);flex-shrink:0}
+.tt-hint{padding:5px 12px 8px;font-size:9px;color:var(--muted);border-top:1px solid var(--border);text-align:center}
+
+/* ── Upload zone ── */
+#upload-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px}
+.upload-tabs{display:flex;gap:8px;margin-bottom:16px}
+.upload-tab{padding:5px 14px;border:1px solid var(--border2);border-radius:20px;cursor:pointer;font-size:11px;color:var(--dim);transition:all .12s;background:var(--bg2);font-family:inherit}
+.upload-tab.active{border-color:var(--accent);color:var(--accent);background:var(--bg3)}
+.drop-area{width:460px;max-width:90%;border:2px dashed var(--border2);border-radius:12px;padding:40px 32px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg2)}
+.drop-area:hover,.drop-area.drag{border-color:var(--accent);background:var(--bg3)}
+.drop-icon{font-size:40px;margin-bottom:12px;opacity:.6}
+.drop-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--accent);margin-bottom:4px}
+.drop-sub{color:var(--dim);font-size:11px}
+#file-input{display:none}
+#dump-area{width:460px;max-width:90%}
+#dump-area textarea{width:100%;height:160px;background:var(--bg2);color:var(--text);border:1px solid var(--border2);border-radius:8px;padding:12px;font-family:inherit;font-size:11px;resize:vertical;outline:none;transition:border .15s}
+#dump-area textarea:focus{border-color:var(--accent)}
+
+/* ── Panels ── */
+#files-panel,#trace-panel{flex:1;overflow-y:auto;padding:12px}
+#dead-panel{flex:1;overflow-y:auto;padding:12px}
+
+/* ── Detail ── */
+#detail{width:300px;min-width:240px;max-width:420px;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+#detail-hdr{padding:10px 14px;border-bottom:1px solid var(--border);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--accent2);flex-shrink:0}
+#detail-body{flex:1;overflow-y:auto;padding:10px 14px}
+
+/* ── Cards / Metrics ── */
+.card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px}
+.card-title{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.metric-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0}
+.metric-label{color:var(--dim);font-size:11px}
+.metric-value{font-weight:600;color:var(--text)}
+.metric-value.accent{color:var(--accent)}
+.metric-value.warn{color:var(--warn)}
+.metric-value.err{color:var(--accent5)}
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.stat-box{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px;text-align:center}
+.stat-num{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--accent)}
+.stat-lbl{color:var(--dim);font-size:10px;margin-top:2px}
+
+/* ── Tree ── */
+.tree-node-hdr{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:4px;cursor:pointer;transition:background .1s;position:relative}
+.tree-node-hdr:hover{background:var(--bg3)}
+.tree-icon{font-size:12px;flex-shrink:0}
+.tree-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.tree-children{margin-left:16px}
+.dead-badge{font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(248,113,113,.15);color:var(--accent5);flex-shrink:0}
+.dead-badge.warn{background:rgba(251,191,36,.15);color:var(--warn)}
+
+/* ── Imports ── */
+.import-row{display:flex;align-items:center;gap:8px;padding:3px 6px;border-radius:4px;font-size:11px}
+.import-row:hover{background:var(--bg3)}
+.import-type{font-size:9px;padding:1px 5px;border-radius:3px;width:50px;text-align:center;flex-shrink:0}
+.import-type.int{background:rgba(126,184,247,.15);color:var(--accent)}
+.import-type.ext{background:rgba(107,112,144,.15);color:var(--dim)}
+
+/* ── Dead Code ── */
+.dc-row{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;font-size:11px;border-left:2px solid transparent;margin-bottom:2px}
+.dc-row:hover{background:var(--bg3)}
+.dc-row.high{border-left-color:var(--dead-hi)}
+.dc-row.med{border-left-color:var(--dead-md)}
+.dc-row.low{border-left-color:var(--dead-lo)}
+.dc-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc-score{font-size:10px;padding:1px 6px;border-radius:3px;flex-shrink:0;font-weight:600}
+.dc-score.high{background:rgba(248,113,113,.2);color:var(--dead-hi)}
+.dc-score.med{background:rgba(251,191,36,.2);color:var(--dead-md)}
+.dc-score.low{background:rgba(217,119,6,.2);color:var(--dead-lo)}
+
+/* ── Section header ── */
+.sec-hdr{font-size:10px;font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;padding:4px 0;margin:10px 0 6px;border-bottom:1px solid var(--border)}
+.sec-hdr:first-child{margin-top:0}
+
+/* ── Loading ── */
+#loading-overlay{position:fixed;inset:0;z-index:200;background:rgba(13,15,20,.85);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+#loading-overlay.show{display:flex}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:var(--dim);font-size:12px}
+
+/* ── Resizer ── */
+.resizer{width:4px;cursor:col-resize;background:transparent;flex-shrink:0}
+.resizer:hover{background:var(--border2)}
+
+/* ── Empty ── */
+.empty{color:var(--muted);text-align:center;padding:32px;font-size:12px}
+
+/* ══════════════════════════════════════════════
+   AI CHANGE IMPACT PANEL
+══════════════════════════════════════════════ */
+#ai-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* API key row */
+.ai-key-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.ai-key-label{font-size:10px;color:var(--dim);white-space:nowrap;flex-shrink:0}
+.ai-key-input{
+  flex:1;background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);border-radius:5px;padding:5px 10px;
+  font-family:inherit;font-size:11px;outline:none;transition:border .15s;
+  letter-spacing:.05em;
+}
+.ai-key-input:focus{border-color:var(--ai)}
+.ai-key-input::placeholder{color:var(--muted);letter-spacing:0}
+.ai-key-status{font-size:10px;flex-shrink:0;padding:2px 8px;border-radius:3px}
+.ai-key-status.set{background:rgba(52,211,153,.1);color:var(--accent3)}
+.ai-key-status.unset{background:rgba(107,114,128,.1);color:var(--muted)}
+.ai-model-select{
+  background:var(--bg3);border:1px solid var(--border2);color:var(--dim);
+  border-radius:5px;padding:4px 8px;font-family:inherit;font-size:10px;
+  outline:none;cursor:pointer;transition:border .15s;
+}
+.ai-model-select:focus{border-color:var(--ai);color:var(--text)}
+
+/* Hero input area */
+#ai-input-area{
+  padding:16px;border-bottom:1px solid var(--border);flex-shrink:0;
+  background:linear-gradient(135deg,rgba(192,132,252,.04) 0%,rgba(129,140,248,.04) 100%);
+}
+.ai-label{
+  font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--ai);margin-bottom:8px;display:flex;align-items:center;gap:6px;
+}
+.ai-label::before{content:'◆';font-size:8px}
+#ai-query{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);border-radius:8px;padding:10px 14px;
+  font-family:inherit;font-size:12px;resize:none;outline:none;
+  transition:border .2s,box-shadow .2s;line-height:1.6;
+  height:80px;
+}
+#ai-query:focus{
+  border-color:var(--ai);
+  box-shadow:0 0 0 3px rgba(192,132,252,.1);
+}
+#ai-query::placeholder{color:var(--muted)}
+.ai-actions{display:flex;align-items:center;gap:8px;margin-top:10px}
+#ai-send{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:7px 16px;background:var(--ai-bg);
+  border:1px solid var(--ai);color:var(--ai);
+  border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;
+  transition:all .15s;font-weight:600;
+}
+#ai-send:hover:not(:disabled){background:rgba(192,132,252,.18);color:#d8b4fe;border-color:#d8b4fe}
+#ai-send:disabled{opacity:.4;cursor:not-allowed}
+.ai-examples{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.ai-example{
+  font-size:10px;padding:3px 10px;border:1px solid var(--border2);
+  background:transparent;color:var(--dim);border-radius:20px;
+  cursor:pointer;font-family:inherit;transition:all .12s;
+}
+.ai-example:hover{border-color:var(--ai);color:var(--ai);background:var(--ai-bg)}
+
+/* Response area */
+#ai-response-area{flex:1;overflow-y:auto;padding:0}
+#ai-welcome{
+  padding:32px;display:flex;flex-direction:column;align-items:center;
+  gap:12px;text-align:center;
+}
+.ai-welcome-icon{font-size:36px;opacity:.5}
+.ai-welcome-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--ai)}
+.ai-welcome-sub{color:var(--dim);font-size:11px;max-width:360px;line-height:1.7}
+
+/* AI thinking animation */
+#ai-thinking{display:none;padding:20px 16px;align-items:center;gap:12px}
+#ai-thinking.show{display:flex}
+.ai-thinking-dots{display:flex;gap:4px}
+.ai-thinking-dots span{
+  width:6px;height:6px;border-radius:50%;background:var(--ai);
+  animation:aiDot 1.2s ease infinite;
+}
+.ai-thinking-dots span:nth-child(2){animation-delay:.2s}
+.ai-thinking-dots span:nth-child(3){animation-delay:.4s}
+@keyframes aiDot{0%,80%,100%{transform:scale(.8);opacity:.4}40%{transform:scale(1.2);opacity:1}}
+.ai-thinking-text{color:var(--dim);font-size:11px}
+
+/* AI response blocks */
+#ai-response{padding:0 16px 16px}
+.ai-response-header{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 0 8px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:12px;
+}
+.ai-response-badge{
+  font-size:9px;padding:2px 8px;border-radius:3px;
+  background:rgba(192,132,252,.15);color:var(--ai);font-weight:600;
+}
+
+/* Impact blocks */
+.impact-block{
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:8px;margin-bottom:10px;overflow:hidden;
+}
+.impact-block-hdr{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-bottom:1px solid var(--border);
+  cursor:pointer;transition:background .12s;
+}
+.impact-block-hdr:hover{background:var(--panel)}
+.impact-file{font-weight:700;color:var(--accent);font-size:12px;flex:1}
+.impact-count{
+  font-size:10px;padding:2px 8px;border-radius:10px;
+  background:rgba(126,184,247,.1);color:var(--accent);
+}
+.impact-block-body{padding:10px 14px}
+
+/* Change item */
+.change-item{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:8px 0;border-bottom:1px solid var(--border);
+}
+.change-item:last-child{border-bottom:none;padding-bottom:0}
+.change-pill{
+  font-size:9px;padding:2px 7px;border-radius:3px;
+  font-weight:600;flex-shrink:0;margin-top:2px;text-transform:uppercase;
+}
+.change-pill.required{background:rgba(248,113,113,.15);color:var(--dead-hi)}
+.change-pill.likely{background:rgba(251,191,36,.15);color:var(--warn)}
+.change-pill.optional{background:rgba(52,211,153,.1);color:var(--accent3)}
+.change-body{flex:1}
+.change-target{
+  font-size:11px;font-weight:600;color:var(--text);
+  font-family:'DM Mono',monospace;margin-bottom:3px;
+}
+.change-reason{font-size:11px;color:var(--dim);line-height:1.6}
+.change-location{
+  font-size:10px;color:var(--muted);margin-top:3px;
+  font-family:'DM Mono',monospace;
+}
+
+/* Summary banner */
+.ai-summary-banner{
+  background:linear-gradient(135deg,rgba(192,132,252,.08),rgba(129,140,248,.08));
+  border:1px solid rgba(192,132,252,.2);border-radius:8px;
+  padding:12px 16px;margin-bottom:12px;
+  font-size:11px;line-height:1.7;color:var(--text);
+}
+.ai-summary-banner strong{color:var(--ai)}
+
+/* Error state */
+.ai-error{
+  background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);
+  border-radius:8px;padding:12px 16px;color:var(--accent5);font-size:11px;
+}
+
+/* No analysis state */
+#ai-no-analysis{
+  padding:32px;text-align:center;color:var(--muted);font-size:12px;
+}
+
+@media(max-width:900px){#detail{display:none}#sidebar{width:180px}}
+
+/* ══════════════════════════════════
+   RESPONSIVE DESIGN — Tablet & Mobile
+══════════════════════════════════ */
+/* Tablet (768px - 1023px) */
+@media (max-width:1023px) and (min-width:768px){
+  #sidebar{width:180px;min-width:140px}
+  #detail{width:240px;min-width:200px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  #topbar{gap:8px;padding:0 12px}
+  .logo{font-size:13px}
+  .btn{padding:4px 8px;font-size:11px}
+}
+
+/* Mobile (<768px) */
+@media (max-width:767px){
+  html,body{overflow:auto}
+  #app{min-height:100vh;height:auto}
+  
+  /* Topbar */
+  #topbar{padding:0 12px;gap:8px;height:52px;flex-wrap:nowrap;overflow-x:auto}
+  .logo{font-size:13px;white-space:nowrap}
+  .btn{padding:4px 8px;font-size:11px;white-space:nowrap}
+  #status-bar-top{display:none}
+  .top-sep{display:none}
+  
+  /* Hide burger and show panels */
+  #sidebar{
+    position:fixed;left:-240px;top:52px;bottom:0;width:240px;z-index:200;
+    background:var(--bg2);border-right:1px solid var(--border);
+    transition:left .25s ease;box-shadow:4px 0 20px rgba(0,0,0,.4);
+  }
+  #sidebar.open{left:0}
+  
+  /* Burger button */
+  #burger-btn{
+    display:flex !important;align-items:center;justify-content:center;
+    width:36px;height:36px;border:1px solid var(--border2);background:var(--bg3);
+    border-radius:6px;cursor:pointer;color:var(--text);font-size:18px;flex-shrink:0;
+  }
+  
+  /* Overlay when sidebar open */
+  #sidebar-overlay{
+    display:none;position:fixed;inset:0;top:52px;background:rgba(0,0,0,.5);z-index:199;
+  }
+  #sidebar-overlay.show{display:block}
+  
+  /* Main layout */
+  #main{flex-direction:column;overflow:auto;height:auto}
+  #center{min-height:calc(100vh - 120px)}
+  
+  /* Detail panel → bottom sheet */
+  #detail{
+    position:fixed;bottom:-70vh;left:0;right:0;height:70vh;
+    width:100% !important;max-width:100% !important;
+    border-left:none;border-top:1px solid var(--border);
+    border-radius:16px 16px 0 0;z-index:300;
+    background:var(--bg2);transition:bottom .3s ease;
+    box-shadow:0 -8px 32px rgba(0,0,0,.5);
+  }
+  #detail.open{bottom:0}
+  #detail-hdr{
+    padding:12px 16px 8px;cursor:pointer;
+    position:relative;
+  }
+  #detail-hdr::before{
+    content:'';position:absolute;top:8px;left:50%;transform:translateX(-50%);
+    width:36px;height:4px;background:var(--border2);border-radius:2px;
+  }
+  
+  /* Tabs */
+  #tab-bar{overflow-x:auto;gap:0;padding:0 8px;-webkit-overflow-scrolling:touch}
+  #tab-bar::-webkit-scrollbar{display:none}
+  .tab{padding:4px 10px;font-size:10px;white-space:nowrap}
+  
+  /* Graph filters */
+  #graph-filter-bar{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  #graph-filter-bar::-webkit-scrollbar{display:none}
+  .filter-label{display:none}
+  .filter-sep{display:none}
+  
+  /* Upload zone */
+  .drop-area{width:90%;max-width:360px;padding:24px 16px}
+  .drop-title{font-size:14px}
+  .drop-sub{font-size:10px}
+  .upload-tabs{flex-wrap:wrap;gap:4px;justify-content:center}
+  
+  /* Stats grid */
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .stat-num{font-size:18px}
+  
+  /* Cards */
+  .card{padding:10px}
+  
+  /* Files panel */
+  #files-panel,#trace-panel,#dead-panel{padding:8px}
+  
+  /* AI panel */
+  #ai-input-area{padding:10px}
+  #ai-query{height:60px}
+  .ai-examples{display:none}
+  
+  /* Graph canvas touch */
+  #graph-canvas{touch-action:none}
+  
+  /* Graph controls mobile */
+  #graph-controls{bottom:8px;right:8px}
+  .graph-btn{width:36px;height:36px;font-size:16px}
+  
+  /* Resizers hidden on mobile */
+  .resizer{display:none}
+}
+
+/* Touch-friendly tap targets */
+@media (hover:none){
+  .btn,.tab,.file-item,.feat-card,.nav-cta,.cta-primary,.cta-secondary{min-height:44px;display:flex;align-items:center}
+  .file-item{padding:10px 12px}
+  .tab{padding:8px 14px}
+  .btn{padding:8px 14px}
+}
+
+/* Footer */
+#app-footer{
+  background:var(--bg2);border-top:1px solid var(--border);
+  padding:10px 20px;text-align:center;font-size:10px;color:var(--muted);
+  flex-shrink:0;letter-spacing:.3px;
+}
+#app-footer span{color:var(--dim)}
+#app-footer a{color:var(--accent2);text-decoration:none}
+#app-footer a:hover{color:var(--accent)}
+
+/* Login overlay */
+#login-overlay{
+  position:fixed;inset:0;z-index:9000;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;
+}
+.login-box{
+  background:var(--bg2);border:1px solid var(--border2);border-radius:16px;
+  padding:40px 36px;max-width:380px;width:90%;text-align:center;
+}
+.login-logo{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--accent);margin-bottom:4px}
+.login-logo span{color:var(--accent2)}
+.login-sub{color:var(--dim);font-size:11px;margin-bottom:28px}
+.login-label{font-size:10px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);text-align:left;margin-bottom:6px;display:block}
+.login-input{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);border-radius:8px;padding:10px 14px;font-family:inherit;
+  font-size:13px;outline:none;transition:border .15s;margin-bottom:16px;
+}
+.login-input:focus{border-color:var(--accent)}
+.login-btn{
+  width:100%;padding:11px;background:var(--accent);color:var(--bg);
+  border:none;border-radius:8px;font-family:inherit;font-size:13px;font-weight:700;
+  cursor:pointer;transition:all .15s;
+}
+.login-btn:hover{background:#60a5fa;transform:translateY(-1px)}
+.login-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.login-error{color:var(--accent5);font-size:11px;margin-top:8px;min-height:16px}
+.login-badge{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 12px;
+  border:1px solid var(--border);border-radius:20px;font-size:10px;
+  color:var(--muted);margin-bottom:20px;
+}
+.login-dot{width:5px;height:5px;border-radius:50%;background:var(--accent2);animation:pulse .9s infinite}
+@keyframes login-spin{to{transform:rotate(360deg)}}
+
+/* Web mode badges */
+.mode-badge{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 8px;
+  border-radius:3px;font-size:9px;font-weight:600;
+}
+.mode-badge.python{background:rgba(126,184,247,.15);color:var(--accent)}
+.mode-badge.web{background:rgba(52,211,153,.12);color:var(--accent3)}
+
+
+/* ══════════════════════════════════════
+   RUNTIME v4 — live, replay, timeline
+══════════════════════════════════════ */
+#runtime-bar{
+  display:none;flex-shrink:0;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--border);
+  z-index:25;font-size:11px;
+}
+#runtime-bar.show{display:flex}
+.rt-mode-btn{
+  padding:3px 10px;border:1px solid var(--border2);border-radius:4px;
+  cursor:pointer;font-size:10px;color:var(--dim);background:var(--bg3);
+  font-family:inherit;transition:all .12s;
+}
+.rt-mode-btn:hover{color:var(--text)}
+.rt-mode-btn.active{border-color:var(--accent3);color:var(--accent3);background:rgba(52,211,153,.08)}
+.rt-mode-btn.live{border-color:var(--accent5);color:var(--accent5)}
+.rt-mode-btn.live.active{background:rgba(248,113,113,.08)}
+#rt-timeline{flex:1;min-width:100px;max-width:300px}
+#rt-frame-info{color:var(--muted);font-size:10px;white-space:nowrap}
+#rt-payload{
+  background:var(--bg3);border:1px solid var(--border);border-radius:5px;
+  padding:4px 10px;font-size:10px;color:var(--accent2);
+  max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  flex:2;cursor:default;
+}
+#rt-live-dot{
+  width:7px;height:7px;border-radius:50%;background:var(--accent5);
+  flex-shrink:0;display:none;
+}
+#rt-live-dot.pulsing{display:block;animation:livePulse 1s ease-in-out infinite}
+@keyframes livePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+#rt-event-count{color:var(--accent5);font-size:10px;white-space:nowrap}
+.rt-step-btn{
+  width:26px;height:26px;border:1px solid var(--border2);background:var(--bg3);
+  color:var(--text);border-radius:4px;cursor:pointer;font-size:13px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  transition:all .12s;font-family:inherit;padding:0;
+}
+.rt-step-btn:hover{background:var(--panel);border-color:var(--accent);color:var(--accent)}
+.rt-step-btn:disabled{opacity:.3;cursor:not-allowed}
+
+/* active node glow overlay on canvas — handled via Graph._rtOverlay */
+#rt-node-pulse{position:absolute;pointer-events:none;border-radius:50%;
+  background:rgba(52,211,153,.25);transform:translate(-50%,-50%);
+  display:none;width:0px;height:0px;transition:none;
+}
+
+
+/* ══════════════════════════════════════
+   FASE 2 — call stack, heat, sessions
+══════════════════════════════════════ */
+
+/* Call Stack panel (inside detail) */
+.call-stack-panel{margin-top:8px}
+.call-stack-frame{
+  display:flex;align-items:center;gap:6px;padding:3px 8px;
+  border-left:2px solid var(--border2);margin-bottom:2px;
+  font-size:10px;color:var(--dim);transition:all .12s;
+}
+.call-stack-frame.top{border-left-color:var(--accent3);color:var(--accent3)}
+.call-stack-frame .stack-idx{color:var(--muted);font-size:9px;flex-shrink:0;width:14px;text-align:right}
+
+/* Mini-timeline bar (below graph canvas) */
+#mini-timeline{
+  display:none;height:28px;background:var(--bg2);border-top:1px solid var(--border);
+  flex-shrink:0;position:relative;overflow:hidden;cursor:pointer;
+}
+#mini-timeline.show{display:block}
+#mt-track{position:absolute;inset:0;padding:4px 8px}
+#mt-cursor{
+  position:absolute;top:0;bottom:0;width:2px;background:var(--accent);
+  pointer-events:none;transition:left .05s linear;
+}
+.mt-dot{
+  position:absolute;width:4px;height:4px;border-radius:50%;
+  transform:translate(-50%,-50%);top:50%;
+}
+.mt-dot.call{background:var(--accent3)}
+.mt-dot.error{background:var(--accent5)}
+.mt-dot.api{background:var(--warn)}
+#mt-tooltip{
+  position:absolute;bottom:100%;background:var(--bg2);border:1px solid var(--border2);
+  border-radius:4px;padding:4px 8px;font-size:10px;color:var(--text);
+  white-space:nowrap;pointer-events:none;display:none;z-index:50;
+}
+
+/* Sessions panel tab */
+#sessions-panel{flex:1;overflow-y:auto;padding:12px}
+.session-card{
+  background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+  padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:all .12s;
+}
+.session-card:hover{border-color:var(--border2);background:var(--panel)}
+.session-card.active{border-color:var(--accent3)}
+.sc-hdr{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.sc-id{font-size:11px;font-weight:600;color:var(--accent);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-type-badge{font-size:9px;padding:1px 6px;border-radius:3px;flex-shrink:0}
+.sc-type-badge.hybrid{background:rgba(52,211,153,.12);color:var(--accent3)}
+.sc-type-badge.runtime{background:rgba(251,191,36,.12);color:var(--warn)}
+.sc-type-badge.static{background:rgba(126,184,247,.15);color:var(--accent)}
+.sc-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.sc-metric{text-align:center;background:var(--bg2);border-radius:4px;padding:4px}
+.sc-metric-n{font-size:13px;font-weight:700;color:var(--accent)}
+.sc-metric-l{font-size:9px;color:var(--muted)}
+
+/* Coverage ring in detail panel */
+.coverage-ring-wrap{display:flex;align-items:center;gap:12px;margin:8px 0}
+.coverage-ring-svg{flex-shrink:0}
+.coverage-ring-text .cov-pct{font-size:18px;font-weight:700;color:var(--accent3)}
+.coverage-ring-text .cov-lbl{font-size:10px;color:var(--muted)}
+
+/* Execution trail breadcrumb */
+.exec-trail{display:flex;gap:3px;flex-wrap:wrap;margin:4px 0}
+.trail-node{
+  font-size:9px;padding:1px 5px;border-radius:3px;
+  background:var(--bg3);color:var(--dim);border:1px solid var(--border);
+  max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.trail-node.latest{background:rgba(52,211,153,.12);color:var(--accent3);border-color:var(--accent3)}
+
+/* Heat map legend */
+.heat-legend{display:flex;align-items:center;gap:6px;font-size:9px;color:var(--muted);margin-top:4px}
+.heat-swatch{width:40px;height:6px;border-radius:2px;
+  background:linear-gradient(90deg,rgba(126,184,247,.1),#34d399)}
+
+/* Animated edge pulse on canvas — handled via JS requestAnimationFrame */
+
+
+/* ══════════════════════════════════════
+   FASE 3 — Auditoría CAE / DAE
+══════════════════════════════════════ */
+
+/* Audit panel layout */
+#audit-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#audit-toolbar{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.audit-select{
+  background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+  border-radius:5px;padding:4px 8px;font-family:inherit;font-size:11px;
+  outline:none;cursor:pointer;transition:border .15s;
+}
+.audit-select:focus{border-color:var(--accent2)}
+.audit-input{
+  background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+  border-radius:5px;padding:4px 8px;font-family:inherit;font-size:11px;
+  outline:none;transition:border .15s;width:120px;
+}
+.audit-input:focus{border-color:var(--accent2)}
+#audit-run-btn{
+  padding:5px 14px;background:rgba(167,139,250,.12);border:1px solid var(--accent2);
+  color:var(--accent2);border-radius:5px;cursor:pointer;font-family:inherit;
+  font-size:11px;font-weight:600;transition:all .15s;
+}
+#audit-run-btn:hover{background:rgba(167,139,250,.22);color:#d8b4fe}
+#audit-run-btn:disabled{opacity:.4;cursor:not-allowed}
+
+#audit-body{flex:1;overflow-y:auto;padding:12px}
+
+/* Risk badge */
+.risk-banner{
+  display:flex;align-items:center;gap:16px;
+  background:var(--bg3);border:1px solid var(--border);border-radius:10px;
+  padding:14px 18px;margin-bottom:14px;
+}
+.risk-grade{
+  font-family:'Syne',sans-serif;font-size:36px;font-weight:900;
+  line-height:1;flex-shrink:0;
+}
+.risk-grade.A{color:var(--accent3)}
+.risk-grade.B{color:#4ade80}
+.risk-grade.C{color:var(--warn)}
+.risk-grade.D{color:var(--accent4)}
+.risk-grade.F{color:var(--accent5)}
+.risk-details{flex:1}
+.risk-label-txt{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
+.risk-score-bar-wrap{display:flex;align-items:center;gap:8px;margin-top:6px}
+.risk-score-bar{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.risk-score-fill{height:100%;border-radius:2px;transition:width .4s ease}
+.risk-score-num{font-size:11px;color:var(--dim);white-space:nowrap}
+.audit-type-badge{
+  padding:3px 10px;border-radius:4px;font-size:10px;font-weight:600;flex-shrink:0;
+}
+.audit-type-badge.CAE{background:rgba(126,184,247,.15);color:var(--accent)}
+.audit-type-badge.DAE{background:rgba(167,139,250,.15);color:var(--accent2)}
+
+/* Findings */
+.finding-card{
+  background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+  margin-bottom:8px;overflow:hidden;
+}
+.finding-hdr{
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  cursor:pointer;transition:background .12s;
+}
+.finding-hdr:hover{background:var(--panel)}
+.finding-sev{
+  font-size:9px;padding:2px 7px;border-radius:3px;font-weight:700;
+  text-transform:uppercase;flex-shrink:0;
+}
+.finding-sev.critical{background:rgba(248,113,113,.2);color:#f87171}
+.finding-sev.high{background:rgba(251,191,36,.15);color:var(--warn)}
+.finding-sev.medium{background:rgba(251,146,60,.15);color:var(--accent4)}
+.finding-sev.low{background:rgba(52,211,153,.1);color:var(--accent3)}
+.finding-sev.info{background:rgba(107,114,128,.1);color:var(--dim)}
+.finding-title{flex:1;font-size:11px;font-weight:600;color:var(--text)}
+.finding-body{padding:0 14px 12px;font-size:11px;color:var(--dim);line-height:1.7;display:none}
+.finding-body.open{display:block}
+.finding-desc{margin-bottom:8px}
+.finding-remediation{
+  background:rgba(52,211,153,.05);border-left:2px solid var(--accent3);
+  padding:6px 10px;border-radius:0 4px 4px 0;font-size:10px;
+  color:var(--dim);margin-top:6px;
+}
+.finding-nodes{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.finding-node-tag{
+  font-size:9px;padding:1px 6px;border-radius:3px;
+  background:var(--bg2);color:var(--dim);border:1px solid var(--border);
+  max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* Findings summary pills */
+.findings-summary{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.sev-pill{
+  display:flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;
+  font-size:10px;border:1px solid var(--border);background:var(--bg3);cursor:pointer;
+  transition:all .12s;
+}
+.sev-pill:hover{border-color:var(--border2)}
+.sev-pill.active{border-color:var(--accent2)}
+.sev-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+
+/* Error clusters */
+.error-cluster{
+  display:flex;align-items:center;gap:10px;padding:6px 10px;
+  border-bottom:1px solid var(--border);font-size:11px;cursor:pointer;
+}
+.error-cluster:hover{background:var(--bg3)}
+.error-cluster:last-child{border-bottom:none}
+.ec-type{color:var(--accent5);font-weight:600;flex-shrink:0;min-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ec-node{color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.ec-count{color:var(--warn);font-weight:600;flex-shrink:0}
+
+/* Search bar */
+#audit-search-bar{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;
+}
+#audit-search-input{
+  flex:1;background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+  border-radius:5px;padding:5px 10px;font-family:inherit;font-size:11px;outline:none;
+}
+#audit-search-input:focus{border-color:var(--accent)}
+.search-result-row{
+  display:flex;align-items:flex-start;gap:8px;padding:6px 14px;
+  border-bottom:1px solid var(--border);font-size:10px;cursor:pointer;
+}
+.search-result-row:hover{background:var(--bg3)}
+.sr-action{color:var(--accent);flex-shrink:0;width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-node{color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-payload{color:var(--muted);flex:2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sr-ts{color:var(--muted);flex-shrink:0;white-space:nowrap}
+
+/* Diff panel */
+.diff-section{margin-bottom:14px}
+.diff-title{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.diff-item{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:10px}
+.diff-new{color:var(--accent3)}
+.diff-lost{color:var(--accent5)}
+.diff-err{color:var(--warn)}
+.diff-fix{color:var(--accent3)}
+.diff-pill{font-size:9px;padding:1px 5px;border-radius:3px;flex-shrink:0}
+.diff-pill.new{background:rgba(52,211,153,.1);color:var(--accent3)}
+.diff-pill.lost{background:rgba(248,113,113,.1);color:var(--accent5)}
+
+@media(max-width:767px){
+  #audit-toolbar{flex-direction:column;align-items:stretch}
+  .audit-input,.audit-select{width:100%}
+}
+
+</style>
+</head>
+<body>
+
+<div id="login-overlay" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">Flow<span>Inspector</span></div>
+    <div class="login-sub">Python &amp; Web Repository Analyzer</div>
+    <div class="login-badge"><span class="login-dot"></span> AETHERYON Systems</div>
+    <label class="login-label" for="login-key">Clave de acceso</label>
+    <input class="login-input" id="login-key" type="password" placeholder="Ingresá la clave…" autocomplete="current-password"/>
+    <button class="login-btn" id="login-btn" onclick="Auth.login()">Acceder →</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">Analizando repositorio…</div>
+</div>
+
+<!-- Rich Tooltip (global) -->
+<div id="rich-tooltip">
+  <div class="tt-header">
+    <span class="tt-icon" id="tt-icon">⬡</span>
+    <span class="tt-title" id="tt-title">–</span>
+    <span class="tt-type" id="tt-type-badge">–</span>
+  </div>
+  <div class="tt-body" id="tt-body"></div>
+  <div class="tt-hint" id="tt-hint"></div>
+</div>
+
+<div id="app">
+  <div id="topbar">
+    <button id="burger-btn" style="display:none" onclick="UI.toggleSidebar()" title="Toggle sidebar">☰</button>
+    
+    <div class="logo">Flow<span>Inspector</span></div>
+    <div class="top-sep"></div>
+    <button class="btn" onclick="UI.showUpload()">⊕ Nuevo análisis</button>
+    <button class="btn" id="btn-export" onclick="UI.exportJSON()" style="display:none">⬇ Exportar JSON</button>
+    <div class="top-sep"></div>
+    <button class="btn" onclick="Graph.relayout()">⟳ Re-layout</button>
+    <button class="btn ai-btn" onclick="UI.switchTab('ai')" id="btn-ai" style="display:none">◆ Change Impact</button>
+    <div id="status-bar-top"><span id="sdot"></span><span id="status-text">Sin análisis</span></div>
+  </div>
+
+  <div id="main">
+    <div id="sidebar-overlay" onclick="UI.toggleSidebar()"></div>
+  <div id="sidebar">
+      <div class="sidebar-hdr">Archivos</div>
+      <div class="search-wrap">
+        <input class="search-input" id="file-search" placeholder="Buscar archivo…" oninput="UI.filterFiles(this.value)"/>
+      </div>
+      <div id="file-list"><div class="empty">Sin archivos</div></div>
+    </div>
+    <div class="resizer" id="resize-sidebar"></div>
+
+    <div id="center">
+      <div id="tab-bar">
+        <button class="tab active" onclick="UI.switchTab('graph')" data-tab="graph">Grafo</button>
+        <button class="tab" onclick="UI.switchTab('files')" data-tab="files">Archivos</button>
+        <button class="tab" onclick="UI.switchTab('dead')" data-tab="dead">Dead Code</button>
+        <button class="tab" onclick="UI.switchTab('trace')" data-tab="trace">Trazabilidad</button>
+        <button class="tab ai-tab" onclick="UI.switchTab('ai')" data-tab="ai">◆ Change Impact</button>
+        <button class="tab" onclick="UI.switchTab('sessions')" data-tab="sessions">⬡ Sesiones</button>
+        <button class="tab" onclick="UI.switchTab('audit')" data-tab="audit">⚑ Auditoría</button>
+      </div>
+
+      <!-- GRAPH TAB -->
+      <div class="tab-panel active" id="tab-graph">
+        <div id="graph-wrap">
+          <!-- Filter / View bar -->
+          <div id="graph-filter-bar">
+            <span class="filter-label">Vista</span>
+            <button class="view-btn active" data-view="all"        onclick="Graph.setView('all')">Todo</button>
+            <button class="view-btn"        data-view="files-only" onclick="Graph.setView('files-only')">Solo archivos</button>
+            <button class="view-btn"        data-view="calls"      onclick="Graph.setView('calls')">Llamadas</button>
+            <button class="view-btn"        data-view="imports"    onclick="Graph.setView('imports')">Imports</button>
+            <div class="filter-sep"></div>
+            <span class="filter-label">Nodos</span>
+            <label class="fcheck on" id="fc-file"    onclick="Graph.toggleFilter('file')">
+              <span class="fdot" style="background:var(--n-file)"></span>Archivos</label>
+            <label class="fcheck on" id="fc-class"   onclick="Graph.toggleFilter('class')">
+              <span class="fdot" style="background:var(--n-class)"></span>Clases</label>
+            <label class="fcheck on" id="fc-function" onclick="Graph.toggleFilter('function')">
+              <span class="fdot" style="background:var(--n-fn)"></span>Funciones</label>
+            <label class="fcheck on" id="fc-module"  onclick="Graph.toggleFilter('module')">
+              <span class="fdot" style="background:var(--n-mod)"></span>Módulos</label>
+            <div class="filter-sep"></div>
+            <span class="filter-label">Aristas</span>
+            <label class="fcheck on" id="fe-IMPORTS" onclick="Graph.toggleEdge('IMPORTS')">
+              <span class="fdot" style="background:#3b82f6"></span>Imports</label>
+            <label class="fcheck on" id="fe-DEFINES" onclick="Graph.toggleEdge('DEFINES')">
+              <span class="fdot" style="background:#8b5cf6"></span>Defines</label>
+            <label class="fcheck on" id="fe-CALLS"   onclick="Graph.toggleEdge('CALLS')">
+              <span class="fdot" style="background:#10b981"></span>Calls</label>
+            <div class="filter-sep"></div>
+            <span class="filter-label">Flujo</span>
+            <label class="fcheck on" id="fc-upstream"   onclick="Graph.toggleFlow('upstream')">
+              <span class="fdot" style="background:var(--accent4)"></span>Upstream</label>
+            <label class="fcheck on" id="fc-downstream" onclick="Graph.toggleFlow('downstream')">
+              <span class="fdot" style="background:var(--accent2)"></span>Downstream</label>
+          </div>
+          <div id="upload-zone">
+            <div class="upload-tabs">
+              <button class="upload-tab active" id="umode-file" onclick="UI.setUploadMode('file')">Archivos .py</button>
+              <button class="upload-tab" id="umode-folder" onclick="UI.setUploadMode('folder')">Carpeta</button>
+              <button class="upload-tab" id="umode-zip"    onclick="UI.setUploadMode('zip')">.zip</button>
+              <button class="upload-tab" id="umode-dump"   onclick="UI.setUploadMode('dump')">Pegar dump</button>
+              <button class="upload-tab" id="umode-web-zip" onclick="UI.setUploadMode('web-zip')">🌐 Web .zip</button>
+              <button class="upload-tab" id="umode-web-dump" onclick="UI.setUploadMode('web-dump')">🌐 Web dump</button>
+            </div>
+            <div class="drop-area" id="drop-area"
+                 onclick="document.getElementById('file-input').click()"
+                 ondragover="UI.onDragOver(event)" ondrop="UI.onDrop(event)" ondragleave="UI.onDragLeave()">
+              <div class="drop-icon">⬡</div>
+              <div class="drop-title" id="drop-title">Arrastrá archivos .py aquí</div>
+              <div class="drop-sub"   id="drop-sub">o hacé clic para seleccionar archivos Python</div>
+            </div>
+            <div id="dump-area" style="display:none">
+              <textarea id="dump-input" placeholder="Pegá aquí el contenido del dump (formato machete o legacy)…"></textarea>
+              <br/><button class="btn primary" style="margin-top:8px" onclick="UI.analyzeDump()">▶ Analizar dump</button>
+            </div>
+            <!-- input normal para .py y .zip -->
+            <input type="file" id="file-input"   multiple accept=".py"      onchange="UI.onFileInput(event)" style="display:none"/>
+            <!-- input para carpeta completa -->
+            <input type="file" id="folder-input" multiple webkitdirectory   onchange="UI.onFileInput(event)" style="display:none"/>
+          </div>
+
+          <!-- RUNTIME BAR v4 -->
+          <div id="runtime-bar">
+            <span id="rt-live-dot"></span>
+            <button class="rt-mode-btn" id="rt-btn-static" onclick="Runtime.setMode('static')" title="Vista estática">Estático</button>
+            <button class="rt-mode-btn live" id="rt-btn-live" onclick="Runtime.setMode('live')" title="Nodos activos en tiempo real">⬤ Live</button>
+            <button class="rt-mode-btn" id="rt-btn-replay" onclick="Runtime.setMode('replay')" title="Reproducir ejecución paso a paso">⏮ Replay</button>
+            <div class="rt-step-btn" id="rt-prev" onclick="Runtime.prevFrame()" title="Frame anterior" style="display:none">◁</div>
+            <input type="range" id="rt-timeline" min="0" max="0" value="0"
+                   oninput="Runtime.scrub(this.value)" style="display:none"/>
+            <div class="rt-step-btn" id="rt-next" onclick="Runtime.nextFrame()" title="Frame siguiente" style="display:none">▷</div>
+            <span id="rt-frame-info" style="display:none">0 / 0</span>
+            <span id="rt-payload" style="display:none"></span>
+            <span id="rt-event-count" style="display:none">0 eventos</span>
+            <div id="rt-node-pulse"></div>
+          </div>
+          <canvas id="graph-canvas"></canvas>
+          <div id="graph-legend">
+            <div class="legend-row"><div class="legend-dot" style="background:var(--n-file)"></div>Archivo</div>
+            <div class="legend-row"><div class="legend-dot" style="background:var(--n-class)"></div>Clase</div>
+            <div class="legend-row"><div class="legend-dot" style="background:var(--n-fn)"></div>Función</div>
+            <div class="legend-row"><div class="legend-dot" style="background:var(--n-mod)"></div>Módulo</div>
+          </div>
+          <div id="mini-timeline"><div id="mt-track"></div><div id="mt-cursor" style="left:0%"></div><div id="mt-tooltip"></div></div>
+          <div id="graph-controls">
+            <button class="graph-btn" onclick="Graph.zoomIn()" title="Zoom in">+</button>
+            <button class="graph-btn" onclick="Graph.zoomOut()" title="Zoom out">−</button>
+            <button class="graph-btn" onclick="Graph.fitView()" title="Fit view">⊡</button>
+            <button class="graph-btn" onclick="Graph.togglePhysics()" title="Toggle physics" id="btn-physics">⚡</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILES TAB -->
+      <div class="tab-panel" id="tab-files">
+        <div id="files-panel"><div class="empty">Cargá un repositorio para ver los archivos.</div></div>
+      </div>
+
+      <!-- DEAD CODE TAB -->
+      <div class="tab-panel" id="tab-dead">
+        <div id="dead-panel"><div class="empty">Cargá un repositorio para ver el análisis de dead code.</div></div>
+      </div>
+
+      <!-- TRACEABILITY TAB -->
+      <div class="tab-panel" id="tab-trace">
+        <div id="trace-panel"><div class="empty">Seleccioná un archivo en la lista para ver su trazabilidad.</div></div>
+      </div>
+
+      <!-- SESSIONS TAB -->
+      <div class="tab-panel" id="tab-sessions">
+        <div id="sessions-panel"><div class="empty">Cargá un repositorio para ver las sesiones.</div></div>
+      </div>
+
+
+      <!-- AUDIT TAB -->
+      <div class="tab-panel" id="tab-audit">
+        <div id="audit-panel">
+          <div id="audit-toolbar">
+            <span style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Tipo</span>
+            <select class="audit-select" id="audit-type">
+              <option value="CAE">CAE — Code Audit Express</option>
+              <option value="DAE">DAE — Deep Audit Express</option>
+            </select>
+            <span style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Proyecto</span>
+            <select class="audit-select" id="audit-project"><option value="">Todos los proyectos</option></select>
+            <span style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Sesión</span>
+            <select class="audit-select" id="audit-flow"><option value="">Seleccionar sesión…</option></select>
+            <span style="font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted)">Baseline</span>
+            <select class="audit-select" id="audit-baseline"><option value="">Sin baseline</option></select>
+            <button id="audit-run-btn" onclick="Audit.run()" disabled>⚑ Generar reporte</button>
+          </div>
+          <div id="audit-search-bar">
+            <input id="audit-search-input" placeholder="Buscar en eventos…  (enter para buscar)" onkeydown="if(event.key==='Enter')Audit.search(this.value)"/>
+            <select class="audit-select" id="audit-search-sev" style="width:110px">
+              <option value="">Todos</option>
+              <option value="error">Solo errores</option>
+            </select>
+            <button class="btn" onclick="Audit.search($('audit-search-input').value)" style="padding:4px 10px;font-size:11px">Buscar</button>
+          </div>
+          <div id="audit-body"><div class="empty">Seleccioná una sesión y generá un reporte para ver los hallazgos.</div></div>
+        </div>
+      </div>
+
+      <!-- AI CHANGE IMPACT TAB -->
+      <div class="tab-panel" id="tab-ai">
+        <div id="ai-panel">
+          <div id="ai-input-area">
+            <div class="ai-label">Change Impact — Groq AI</div>
+            <div class="ai-key-row">
+              <span class="ai-key-label">Groq API Key</span>
+              <input class="ai-key-input" id="groq-key" type="password"
+                     placeholder="gsk_…  (gratis en console.groq.com)"
+                     oninput="AI.onKeyChange(this.value)"/>
+              <span class="ai-key-status unset" id="key-status">Sin key</span>
+              <select class="ai-model-select" id="groq-model">
+                <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
+                <option value="llama3-70b-8192">Llama 3 70B</option>
+                <option value="llama3-8b-8192">Llama 3 8B (rápido)</option>
+                <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                <option value="gemma2-9b-it">Gemma 2 9B</option>
+              </select>
+            </div>
+            <textarea id="ai-query" placeholder="Describí el cambio que querés hacer…&#10;Ej: Quiero agregar paginación al endpoint /analyze/upload"></textarea>
+            <div class="ai-actions">
+              <button id="ai-send" onclick="AI.analyze()" disabled>
+                <span id="ai-send-icon">◆</span> Analizar impacto
+              </button>
+              <span style="color:var(--muted);font-size:10px;margin-left:4px" id="ai-send-hint">Ingresá tu Groq API key primero</span>
+            </div>
+            <div class="ai-examples" id="ai-examples">
+              <span style="font-size:10px;color:var(--muted);align-self:center">Ejemplos:</span>
+            </div>
+          </div>
+          <div id="ai-response-area">
+            <div id="ai-no-analysis">Cargá un repositorio para usar Change Impact</div>
+            <div id="ai-welcome" style="display:none">
+              <div class="ai-welcome-icon">◆</div>
+              <div class="ai-welcome-title">Change Impact Analysis</div>
+              <div class="ai-welcome-sub">
+                Describí el cambio que querés hacer en lenguaje natural.
+                La IA (Groq) analizará el grafo de dependencias y te va a decir exactamente
+                qué archivos, clases, métodos y funciones necesitás modificar y por qué.
+              </div>
+            </div>
+            <div id="ai-thinking">
+              <div class="ai-thinking-dots"><span></span><span></span><span></span></div>
+              <div class="ai-thinking-text">Analizando impacto en el repositorio…</div>
+            </div>
+            <div id="ai-response"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="resizer" id="resize-detail"></div>
+
+    <div id="detail">
+      <div id="detail-hdr" onclick="UI.closeDetail()"><span id="detail-title">Detalle</span><span style="margin-left:auto;font-size:10px;color:var(--muted)" id="detail-close-hint">↓ cerrar</span></div>
+      <div id="detail-body"><div class="empty">Seleccioná un nodo o archivo.</div></div>
+    </div>
+  </div>
+
+  <footer id="app-footer">
+    build with 🧡 by <a href="https://aetheryon.com" target="_blank">AETHERYON Systems</a>
+  </footer>
+</div>
+
+<script>
+// ════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════
+const API = "";
+
+// ════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════
+// AUTH MODULE
+// ════════════════════════════════════════════════
+const Auth = {
+  _key: sessionStorage.getItem('fi_access_key') || '',
+
+  headers() {
+    return this._key ? { 'x-access-key': this._key } : {};
+  },
+
+  async init() {
+    const r = await fetch(`${API}/api/auth-required`).catch(() => null);
+    if (!r || !r.ok) return; // network error → proceed anyway
+    const data = await r.json();
+    if (!data.required) {
+      $('login-overlay').style.display = 'none';
+      return;
+    }
+    if (this._key) {
+      // Verify stored key
+      const vr = await fetch(`${API}/api/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: this._key })
+      }).catch(() => null);
+      if (vr && vr.ok) {
+        $('login-overlay').style.display = 'none';
+        return;
+      }
+      this._key = ''; sessionStorage.removeItem('fi_access_key');
+    }
+    // Show login screen
+    $('login-overlay').style.display = 'flex';
+    $('login-key').addEventListener('keydown', e => { if (e.key === 'Enter') Auth.login(); });
+    setTimeout(() => $('login-key').focus(), 100);
+  },
+
+  async login() {
+    const key = $('login-key').value.trim();
+    if (!key) return;
+    $('login-btn').disabled = true;
+    $('login-error').textContent = '';
+    try {
+      const r = await fetch(`${API}/api/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key })
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.detail || 'Clave incorrecta');
+      }
+      this._key = key;
+      sessionStorage.setItem('fi_access_key', key);
+      $('login-overlay').style.display = 'none';
+    } catch(e) {
+      $('login-error').textContent = e.message;
+      $('login-key').select();
+    } finally {
+      $('login-btn').disabled = false;
+    }
+  },
+};
+
+
+  async uploadWebZip(file) {
+    UI.showLoading('Analizando ZIP web…');
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch(`${API}/analyze/web-zip`, { method:'POST', headers: Auth.headers(), body:fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Error');
+      UI.onAnalysis(data);
+    } catch(e) { UI.onError(e.message); }
+  },
+
+const State = { analysis: null, selectedFile: null, uploadMode: 'file' };
+
+// ════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const scoreClass = s => s >= 0.7 ? 'high' : s >= 0.4 ? 'med' : 'low';
+
+// ════════════════════════════════════════════════
+// RICH TOOLTIP ENGINE
+// ════════════════════════════════════════════════
+const Tooltip = {
+  _tt: null, _timer: null,
+  _icons: { file:'📄', class:'⬡', function:'ƒ', module:'◎', external:'○' },
+
+  init() { this._tt = $('rich-tooltip'); },
+
+  showForNode(nodeId, nodeData, analysis, x, y) {
+    clearTimeout(this._timer);
+    if (!nodeData) return;
+
+    const type  = nodeData.type || 'module';
+    const label = nodeData.label || nodeId;
+
+    // Header
+    $('tt-icon').textContent = this._icons[type] || '○';
+    $('tt-title').textContent = label;
+    const badge = $('tt-type-badge');
+    badge.textContent = type;
+    badge.className = `tt-type ${type}`;
+
+    // Body
+    let body = '';
+    if (analysis) {
+      const graph = analysis.graph;
+      const edges = graph.edges;
+      const inEdges  = edges.filter(e => e.to   === nodeId);
+      const outEdges = edges.filter(e => e.from === nodeId);
+      const callers  = edges.filter(e => e.to   === nodeId && e.relation === 'CALLS');
+      const calls    = edges.filter(e => e.from === nodeId && e.relation === 'CALLS');
+
+      if (type === 'file') {
+        const fp = nodeData.path || label;
+        const fdata = analysis.files.find(f => f.path === fp) || {};
+        const dc = analysis.dead_code?.items?.[fp] || [];
+        const highDc = dc.filter(d => d.score >= 0.7).length;
+
+        body += `<div class="tt-row"><span class="tt-label">Clases</span><span class="tt-val accent">${fdata.classes?.length || 0}</span></div>`;
+        body += `<div class="tt-row"><span class="tt-label">Funciones</span><span class="tt-val accent">${fdata.functions?.length || 0}</span></div>`;
+        body += `<div class="tt-row"><span class="tt-label">Imports</span><span class="tt-val">${fdata.imports_total || 0} (${fdata.imports_internal || 0} int.)</span></div>`;
+        body += `<div class="tt-row"><span class="tt-label">Importado por</span><span class="tt-val">${inEdges.filter(e=>e.relation==='IMPORTS').length}</span></div>`;
+        if (dc.length) {
+          body += `<div class="tt-sep"></div>`;
+          body += `<div class="tt-row"><span class="tt-label">Dead code</span><span class="tt-val ${highDc>0?'err':'warn'}">${dc.length} items${highDc>0?` (${highDc} alto)`:''}</span></div>`;
+        }
+      } else if (type === 'class') {
+        const cls = nodeData.label;
+        const inherits = nodeData.inherits || [];
+        const methods = outEdges.filter(e=>e.relation==='DEFINES').length;
+        body += `<div class="tt-row"><span class="tt-label">Métodos</span><span class="tt-val accent">${methods}</span></div>`;
+        if (inherits.length) body += `<div class="tt-row"><span class="tt-label">Hereda de</span><span class="tt-val">${inherits.join(', ')}</span></div>`;
+        const decs = nodeData.decorators || [];
+        if (decs.length) body += `<div class="tt-row"><span class="tt-label">Decoradores</span><span class="tt-val">${decs.map(d=>'@'+d).join(' ')}</span></div>`;
+      } else if (type === 'function') {
+        const callerCount = callers.length;
+        const callCount   = calls.length;
+        const deadScore   = _findDeadScore(nodeData, analysis);
+
+        body += `<div class="tt-row"><span class="tt-label">Llamado por</span><span class="tt-val ${callerCount===0?'err':'ok'}">${callerCount} caller${callerCount!==1?'s':''}</span></div>`;
+        body += `<div class="tt-row"><span class="tt-label">Llama a</span><span class="tt-val">${callCount} func${callCount!==1?'s':''}</span></div>`;
+        if (nodeData.class) body += `<div class="tt-row"><span class="tt-label">Clase</span><span class="tt-val accent">${nodeData.class}</span></div>`;
+        const decs = nodeData.decorators || [];
+        if (decs.length) body += `<div class="tt-row"><span class="tt-label">Decoradores</span><span class="tt-val">${decs.map(d=>'@'+d).join(' ')}</span></div>`;
+        if (deadScore > 0) {
+          body += `<div class="tt-sep"></div>`;
+          const dc = scoreClass(deadScore);
+          body += `<div class="tt-row"><span class="tt-label">Dead score</span><span class="tt-val ${dc==='high'?'err':dc==='med'?'warn':'ok'}">${Math.round(deadScore*100)}%</span></div>`;
+        }
+        // Show top callers
+        if (callers.length) {
+          body += `<div class="tt-sep"></div><div class="tt-calls">Llamado desde:</div>`;
+          callers.slice(0,3).forEach(e => {
+            const src = graph.nodes[e.from];
+            body += `<div class="tt-call-row"><span class="tt-call-arrow">←</span>${src?.label||e.from}</div>`;
+          });
+          if (callers.length > 3) body += `<div class="tt-call-row" style="color:var(--muted)">+${callers.length-3} más…</div>`;
+        }
+      } else if (type === 'module') {
+        const isInt = inEdges.some(e => e.is_internal);
+        body += `<div class="tt-row"><span class="tt-label">Tipo</span><span class="tt-val ${isInt?'accent':''}">` +
+                `${isInt?'interno (repo)':'externo'}</span></div>`;
+        body += `<div class="tt-row"><span class="tt-label">Importado por</span><span class="tt-val">${inEdges.length} archivo${inEdges.length!==1?'s':''}</span></div>`;
+      }
+
+      body += `<div class="tt-row"><span class="tt-label">Aristas entrada</span><span class="tt-val">${inEdges.length}</span></div>`;
+      body += `<div class="tt-row"><span class="tt-label">Aristas salida</span><span class="tt-val">${outEdges.length}</span></div>`;
+    }
+
+    $('tt-body').innerHTML = body;
+    $('tt-hint').textContent = type==='file' ? 'doble clic para seleccionar' : 'clic para ver detalle';
+
+    this._pos(x, y);
+    this._tt.style.display = 'block';
+  },
+
+  showForElement(el, text, detail='') {
+    clearTimeout(this._timer);
+    $('tt-icon').textContent = 'ℹ';
+    $('tt-title').textContent = text;
+    $('tt-type-badge').textContent = '';
+    $('tt-type-badge').className = 'tt-type';
+    $('tt-body').innerHTML = detail ? `<div style="font-size:11px;color:var(--dim);line-height:1.6">${detail}</div>` : '';
+    $('tt-hint').textContent = '';
+    const rect = el.getBoundingClientRect();
+    this._pos(rect.left, rect.bottom + 6);
+    this._tt.style.display = 'block';
+  },
+
+  hide(delay = 80) {
+    clearTimeout(this._timer);
+    this._timer = setTimeout(() => { this._tt.style.display = 'none'; }, delay);
+  },
+
+  _pos(x, y) {
+    const tt = this._tt;
+    tt.style.left = '-9999px'; tt.style.top = '-9999px'; tt.style.display = 'block';
+    const w = tt.offsetWidth, h = tt.offsetHeight;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const left = x + w + 16 > vw ? x - w - 10 : x + 14;
+    const top  = y + h + 10 > vh ? y - h - 6  : y + 14;
+    tt.style.left = left + 'px';
+    tt.style.top  = top  + 'px';
+  },
+};
+
+function _findDeadScore(nodeData, analysis) {
+  if (!analysis?.dead_code?.scores) return 0;
+  const label = nodeData.label || '';
+  for (const [fp, scores] of Object.entries(analysis.dead_code.scores)) {
+    const score = scores[label] ?? scores[nodeData.short_name ?? ''];
+    if (score !== undefined) return score;
+  }
+  return 0;
+}
+
+// ════════════════════════════════════════════════
+// UI CONTROLLER
+// ════════════════════════════════════════════════
+const UI = {
+  setStatus(msg, state = '') {
+    $('status-text').textContent = msg;
+    $('sdot').className = state;
+  },
+
+  showLoading(msg = 'Analizando…') {
+    $('loading-text').textContent = msg;
+    $('loading-overlay').classList.add('show');
+  },
+
+  hideLoading() { $('loading-overlay').classList.remove('show'); },
+
+  switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
+    if (tab === 'trace' && State.selectedFile) UI.renderTrace(State.selectedFile);
+  },
+
+  showUpload() {
+    UI.switchTab('graph');
+    State.analysis = null; State.selectedFile = null;
+    $('upload-zone').style.display    = 'flex';
+    $('graph-canvas').style.display   = 'none';
+    $('graph-legend').style.display   = 'none';
+    $('graph-controls').style.display = 'none';
+    $('graph-filter-bar').classList.remove('show');
+    UI.setUploadMode('file');
+    $('file-list').innerHTML   = '<div class="empty">Sin archivos</div>';
+    $('files-panel').innerHTML = '<div class="empty">Cargá un repositorio para ver los archivos.</div>';
+    $('dead-panel').innerHTML  = '<div class="empty">Cargá un repositorio para ver el análisis de dead code.</div>';
+    $('trace-panel').innerHTML = '<div class="empty">Seleccioná un archivo en la lista para ver su trazabilidad.</div>';
+    $('detail-body').innerHTML = '<div class="empty">Seleccioná un nodo o archivo.</div>';
+    $('detail-title').textContent = 'Detalle';
+    $('btn-export').style.display  = 'none';
+    $('btn-ai').style.display      = 'none';
+    $('file-input').value  = '';
+    try { $('folder-input').value = ''; } catch(_) {}
+    $('dump-input').value  = ''; $('file-search').value = '';
+    AI.resetUI();
+    UI.setStatus('Listo — subí un repositorio para comenzar');
+  },
+
+  setUploadMode(mode) {
+    State.uploadMode = mode;
+
+  // Web mode additions
+  if (mode === 'web-zip') {
+    State.uploadMode = 'web-zip';
+    $('drop-area').style.display = 'block';
+    $('dump-area').style.display = 'none';
+    $('file-input').accept = '.zip';
+    $('drop-title').textContent = 'Arrastrá tu .zip web aquí';
+    $('drop-sub').textContent = 'o hacé clic — acepta .html, .css, .js';
+    $('drop-area').onclick = () => $('file-input').click();
+    return;
+  }
+  if (mode === 'web-dump') {
+    State.uploadMode = 'web-dump';
+    $('drop-area').style.display = 'none';
+    $('dump-area').style.display = 'block';
+    $('dump-input').placeholder = 'Pegá aquí el dump de tu proyecto web (HTML/CSS/JS en formato machete)…';
+    return;
+  }
+
+    ['file','folder','zip','dump'].forEach(m => {
+      const el = $(`umode-${m}`); if (el) el.classList.toggle('active', m === mode);
+    });
+    const isDump = mode === 'dump';
+    $('drop-area').style.display = isDump ? 'none' : 'block';
+    $('dump-area').style.display = isDump ? 'block' : 'none';
+    // Route click to correct input
+    $('drop-area').onclick = () => $(mode === 'folder' ? 'folder-input' : 'file-input').click();
+    if (!isDump) {
+      const MAP = {
+        file:   ['.py,.txt',  'Arrastrá archivos .py aquí',       'o hacé clic para seleccionar archivos Python'],
+        folder: ['',          'Arrastrá tu carpeta de proyecto',   'o hacé clic para seleccionar una carpeta entera'],
+        zip:    ['.zip',      'Arrastrá tu archivo .zip aquí',     'o hacé clic para seleccionar un .zip'],
+      };
+      const [accept, title, sub] = MAP[mode] || MAP.file;
+      $('file-input').accept      = accept;
+      $('drop-title').textContent = title;
+      $('drop-sub').textContent   = sub;
+    }
+  },
+
+  onDragOver(e)  { e.preventDefault(); $('drop-area').classList.add('drag'); },
+  onDragLeave()  { $('drop-area').classList.remove('drag'); },
+  onDrop(e)      { e.preventDefault(); $('drop-area').classList.remove('drag'); UI.processFiles(e.dataTransfer.files); },
+  onFileInput(e) { UI.processFiles(e.target.files); },
+
+  processFiles(fl) {
+    const files = Array.from(fl); if (!files.length) return;
+    const zip = files.find(f => f.name.endsWith('.zip'));
+    if (zip || State.uploadMode === 'zip') UI.uploadZip(zip || files[0]);
+    else if (State.uploadMode === 'web-zip') UI.uploadWebZip(zip || files[0]);
+    else if (State.uploadMode === 'web-dump') UI.analyzeWebDump();
+    else UI.uploadPyFiles(files.filter(f => f.name.endsWith('.py') || f.name.endsWith('.txt')));
+  },
+
+  async uploadZip(file) {
+    UI.showLoading('Analizando ZIP…');
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch(`${API}/analyze/zip`, { method:'POST', body:fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Error');
+      UI.onAnalysis(data);
+    } catch(e) { UI.onError(e.message); }
+  },
+
+  async uploadPyFiles(files) {
+    if (!files.length) { UI.onError('No se encontraron archivos .py'); return; }
+    const count = files.length;
+    UI.showLoading(`Analizando ${count} archivo${count > 1 ? 's' : ''}…`);
+    try {
+      const fd = new FormData();
+      files.forEach(f => {
+        // webkitRelativePath preserva la ruta relativa (ej: "myrepo/pkg/utils.py")
+        // si no existe, usamos solo el nombre
+        const path = f.webkitRelativePath || f.name;
+        fd.append('files', f, path);
+      });
+      const r = await fetch(`${API}/analyze/upload`, { method:'POST', body:fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Error');
+      UI.onAnalysis(data);
+    } catch(e) { UI.onError(e.message); }
+  },
+
+  async analyzeWebDump() {
+    const content = $('dump-input').value.trim();
+    if (!content) { UI.onError('El campo está vacío'); return; }
+    UI.showLoading('Analizando dump web…');
+    try {
+      const r = await fetch(`${API}/analyze/web-dump`, {
+        method:'POST', headers:{'Content-Type':'application/json', ...Auth.headers()},
+        body: JSON.stringify({ content }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Error');
+      UI.onAnalysis(data);
+    } catch(e) { UI.onError(e.message); }
+  },
+
+  async analyzeDump() {
+    const content = $('dump-input').value.trim();
+    if (!content) { UI.onError('El campo está vacío'); return; }
+    UI.showLoading('Analizando dump…');
+    try {
+      const r = await fetch(`${API}/analyze/dump`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ content }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Error');
+      UI.onAnalysis(data);
+    } catch(e) { UI.onError(e.message); }
+  },
+
+  onAnalysis(data) {
+    UI.hideLoading();
+    State.analysis = data;
+    const s = data.summary;
+    const pt = data.project_type === 'web' ? '🌐 Web' : '🐍 Python';
+    UI.setStatus(`${pt} · ${s.total_files} archivos · ${s.total_nodes} nodos`, 'ok');
+    $('btn-export').style.display = '';
+    $('btn-ai').style.display = '';
+    UI.renderFileList(data.files);
+    if (data.project_type === 'web') {
+      UI.renderWebFilesTab(data);
+      $('tab-dead').style.display = 'none';
+      $('tab-trace').style.display = 'none';
+    } else {
+      $('tab-dead').style.display = '';
+      $('tab-trace').style.display = '';
+      UI.renderFilesTab(data);
+    }
+    UI.renderDeadCode(data);
+    Graph.init(data.graph);
+    $('upload-zone').style.display    = 'none';
+    $('graph-canvas').style.display   = 'block';
+    $('graph-legend').style.display   = 'block';
+    $('graph-controls').style.display = 'flex';
+    $('graph-filter-bar').classList.add('show');
+    AI.onAnalysisReady(data);
+  },
+
+  onError(msg) {
+    UI.hideLoading();
+    UI.setStatus('Error: '+msg, 'err');
+    alert('Error: '+msg);
+  },
+
+  // ── File list ──────────────────────────────────
+  _allFiles: [],
+  renderFileList(files) { UI._allFiles = files; UI._renderFiltered(files); },
+  filterFiles(q) {
+    UI._renderFiltered(q
+      ? UI._allFiles.filter(f => f.name.toLowerCase().includes(q.toLowerCase()))
+      : UI._allFiles);
+  },
+  _renderFiltered(files) {
+    const el = $('file-list');
+    if (!files.length) { el.innerHTML = '<div class="empty">Sin archivos</div>'; return; }
+    el.innerHTML = files.map(f => {
+      const badge = f.dead_code_high > 0
+        ? `<span class="fi-badge err">⚠ ${f.dead_code_high}</span>`
+        : f.dead_code_count > 0
+          ? `<span class="fi-badge warn">⚠ ${f.dead_code_count}</span>` : '';
+      const ep = CSS.escape(f.path);
+      // Stats for tooltip
+      const tip = `data-tip-file="${ep}"`;
+      return `<div class="file-item" data-path="${f.path}" ${tip} onclick="UI.selectFile('${ep}')" ` +
+             `onmouseenter="UI.hoverFile(event,'${ep}')" onmouseleave="Tooltip.hide()">` +
+             `<span class="fi-name" title="${f.path}">${f.name}</span>${badge}</div>`;
+    }).join('');
+  },
+
+  hoverFile(e, ep) {
+    if (!State.analysis) return;
+    const path = State.analysis.files.find(f => CSS.escape(f.path) === ep)?.path || ep;
+    const nodeId = `file:${path}`;
+    Tooltip.showForNode(nodeId, State.analysis.graph?.nodes?.[nodeId], State.analysis,
+                        e.clientX, e.clientY);
+  },
+
+  selectFile(pathEscaped) {
+    const path = State.analysis.files.find(f => CSS.escape(f.path) === pathEscaped)?.path || pathEscaped;
+    State.selectedFile = path;
+    document.querySelectorAll('.file-item').forEach(el =>
+      el.classList.toggle('active', el.dataset.path === path));
+    UI.renderDetailForFile(path);
+    Graph.highlightFile(path);
+    if ($('tab-trace').classList.contains('active')) UI.renderTrace(path);
+  },
+
+  // ── Detail panel ──────────────────────────────
+  renderDetailForFile(path) {
+    const data   = State.analysis;
+    const struct = data.structure[path]    || { classes:{}, functions:[] };
+    const deps   = data.dependencies[path] || { all:[], internal:[], external:[], internal_map:{} };
+    const dcItems= data.dead_code.items[path] || [];
+    const fname  = path.split('/').pop();
+
+    $('detail-title').textContent = fname;
+
+    const nC = Object.keys(struct.classes).length;
+    const nF = struct.functions.length;
+    let h = `<div class="stats-grid">
+      <div class="stat-box"><div class="stat-num">${nC}</div><div class="stat-lbl">Clases</div></div>
+      <div class="stat-box"><div class="stat-num">${nF}</div><div class="stat-lbl">Funciones</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:${dcItems.length>0?'var(--warn)':'var(--accent3)'}">
+        ${dcItems.length}</div><div class="stat-lbl">Dead code</div></div>
+    </div>`;
+
+    if (deps.all.length) {
+      h += `<div class="sec-hdr">Imports (${deps.all.length})</div>`;
+      deps.all.forEach(mod => {
+        const isInt = deps.internal.includes(mod);
+        const tt = isInt ? `Módulo interno del repositorio` : `Dependencia externa`;
+        h += `<div class="import-row" onmouseenter="Tooltip.showForElement(this,'${mod}','${tt}')" onmouseleave="Tooltip.hide()">
+          <span class="import-type ${isInt?'int':'ext'}">${isInt?'interno':'externo'}</span>
+          <span>${mod}</span></div>`;
+      });
+    }
+
+    if (nC || nF) {
+      h += `<div class="sec-hdr">Estructura</div>`;
+      Object.entries(struct.classes).forEach(([cls, cdata]) => {
+        const cid = `class:${cls}`;
+        const inh = cdata.inherits?.length ? `← ${cdata.inherits.join(', ')}` : '';
+        h += `<div class="tree-node-hdr"
+          onmouseenter="UI._hoverNode(event,'${CSS.escape(cid)}')"
+          onmouseleave="Tooltip.hide()">
+          <span class="tree-icon" style="color:var(--n-class)">⬡</span>
+          <span class="tree-label">${cls}</span>
+          ${inh?`<span style="color:var(--muted);font-size:10px">${inh}</span>`:''}
+        </div><div class="tree-children">`;
+        cdata.methods.forEach(m => {
+          const mn  = typeof m === 'string' ? m : m.name;
+          const mid = `method:${cls}.${mn}`;
+          const dc  = dcItems.find(d => d.name === `${cls}.${mn}`);
+          const dcBadge = dc ? `<span class="dead-badge ${dc.score>=0.7?'':'warn'}">${Math.round(dc.score*100)}%</span>` : '';
+          h += `<div class="tree-node-hdr" style="padding-left:8px"
+            onmouseenter="UI._hoverNode(event,'${CSS.escape(mid)}')"
+            onmouseleave="Tooltip.hide()">
+            <span class="tree-icon" style="color:var(--n-fn)">ƒ</span>
+            <span class="tree-label">${mn}()</span>${dcBadge}</div>`;
+        });
+        h += `</div>`;
+      });
+      struct.functions.forEach(fn => {
+        const name = typeof fn === 'string' ? fn : fn.name;
+        const fid  = `function:${name}`;
+        const dc   = dcItems.find(d => d.name === name);
+        const dcBadge = dc ? `<span class="dead-badge ${dc.score>=0.7?'':'warn'}">${Math.round(dc.score*100)}%</span>` : '';
+        h += `<div class="tree-node-hdr"
+          onmouseenter="UI._hoverNode(event,'${CSS.escape(fid)}')"
+          onmouseleave="Tooltip.hide()">
+          <span class="tree-icon" style="color:var(--accent4)">ƒ</span>
+          <span class="tree-label">${name}()</span>${dcBadge}</div>`;
+      });
+    }
+
+    if (dcItems.length) {
+      h += `<div class="sec-hdr">Dead Code (${dcItems.length})</div>`;
+      dcItems.forEach(d => {
+        const c = scoreClass(d.score);
+        const tip = `Score: ${Math.round(d.score*100)}% — ${d.label}. Sin callers detectados.`;
+        h += `<div class="dc-row ${c}"
+          onmouseenter="Tooltip.showForElement(this,'${d.name}','${tip}')"
+          onmouseleave="Tooltip.hide()">
+          <span class="dc-name">${d.name}</span>
+          <span class="dc-score ${c}">${Math.round(d.score*100)}%</span>
+          <span style="color:var(--muted);font-size:10px">${d.label}</span>
+        </div>`;
+      });
+    }
+
+    $('detail-body').innerHTML = h;
+  },
+
+  _hoverNode(e, nodeIdEscaped) {
+    if (!State.analysis?.graph) return;
+    const nodeId = [...Object.keys(State.analysis.graph.nodes)]
+      .find(k => CSS.escape(k) === nodeIdEscaped) || nodeIdEscaped;
+    const node = State.analysis.graph.nodes[nodeId];
+    if (node) Tooltip.showForNode(nodeId, node, State.analysis, e.clientX, e.clientY);
+  },
+
+  // ── Files tab ─────────────────────────────────
+  renderFilesTab(data) {
+    const s = data.summary, dc = s.dead_code_summary;
+    let h = `<div class="stats-grid">
+      <div class="stat-box"><div class="stat-num">${s.total_files}</div><div class="stat-lbl">Archivos</div></div>
+      <div class="stat-box"><div class="stat-num">${s.total_classes}</div><div class="stat-lbl">Clases</div></div>
+      <div class="stat-box"><div class="stat-num">${s.total_functions}</div><div class="stat-lbl">Funciones</div></div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-box"><div class="stat-num">${s.total_nodes}</div><div class="stat-lbl">Nodos</div></div>
+      <div class="stat-box"><div class="stat-num">${s.total_edges}</div><div class="stat-lbl">Aristas</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--warn)">${dc.dead_high}</div><div class="stat-lbl">Dead High</div></div>
+    </div>`;
+    data.files.forEach(f => {
+      const dcCls = f.dead_code_high>0?'err':f.dead_code_count>0?'warn':'';
+      const ep = CSS.escape(f.path);
+      h += `<div class="card" onclick="UI.selectFile('${ep}')" style="cursor:pointer">
+        <div class="card-title" style="color:var(--accent)">${f.name}</div>
+        <div class="metric-row"><span class="metric-label">Clases</span><span class="metric-value">${f.classes.length}</span></div>
+        <div class="metric-row"><span class="metric-label">Funciones</span><span class="metric-value">${f.functions.length}</span></div>
+        <div class="metric-row"><span class="metric-label">Imports totales</span><span class="metric-value">${f.imports_total}</span></div>
+        <div class="metric-row"><span class="metric-label">Imports internos</span><span class="metric-value accent">${f.imports_internal}</span></div>
+        ${f.dead_code_count>0?`<div class="metric-row"><span class="metric-label">Dead code</span><span class="metric-value ${dcCls}">${f.dead_code_count} (${f.dead_code_high} alto)</span></div>`:''}
+      </div>`;
+    });
+    $('files-panel').innerHTML = h;
+  },
+
+  // ── Dead code tab ─────────────────────────────
+  renderDeadCode(data) {
+    const s = data.dead_code.summary;
+    let h = `<div class="stats-grid">
+      <div class="stat-box"><div class="stat-num" style="color:var(--dead-hi)">${s.dead_high}</div><div class="stat-lbl">Alto (≥70%)</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--dead-md)">${s.dead_medium}</div><div class="stat-lbl">Medio (40-69%)</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--dead-lo)">${s.dead_low}</div><div class="stat-lbl">Bajo (&lt;40%)</div></div>
+    </div>`;
+    let any = false;
+    Object.entries(data.dead_code.items).forEach(([fp, items]) => {
+      if (!items.length) return; any = true;
+      const fname = fp.split('/').pop();
+      const ep = CSS.escape(fp);
+      h += `<div class="sec-hdr">${fname} (${items.length})</div>`;
+      items.forEach(d => {
+        const c = scoreClass(d.score);
+        const tip = `Dead code score: ${Math.round(d.score*100)}% (${d.label}). Función sin callers detectados en el repositorio.`;
+        h += `<div class="dc-row ${c}" onclick="UI.selectFile('${ep}')" style="cursor:pointer"
+          onmouseenter="Tooltip.showForElement(this,'${d.name}','${tip}')"
+          onmouseleave="Tooltip.hide()">
+          <span class="dc-name">${d.name}${d.class?` <span style="color:var(--muted)">in ${d.class}</span>`:''}</span>
+          <span class="dc-score ${c}">${Math.round(d.score*100)}%</span>
+        </div>`;
+      });
+    });
+    if (!any) h += '<div class="empty">¡Sin dead code detectado!</div>';
+    $('dead-panel').innerHTML = h;
+  },
+
+  // ── Traceability tab ──────────────────────────
+  async renderTrace(path) {
+    if (!State.analysis) return;
+    $('trace-panel').innerHTML = '<div class="empty">Cargando…</div>';
+    try {
+      const r = await fetch(`${API}/traceability`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          filepath: path,
+          analysis: {
+            files:        Object.fromEntries(State.analysis.files.map(f=>[f.path,''])),
+            dependencies: State.analysis.dependencies,
+            structure:    State.analysis.structure,
+            call_graph:   State.analysis.call_graph,
+            graph:        State.analysis.graph,
+          },
+        }),
+      });
+      const t = await r.json();
+
+      // ── Header stats ─────────────────────────────────────────────────────
+      const downInternal = (t.downstream || t.imports || []).filter(i => i.is_internal);
+      const upCount      = (t.upstream   || t.imported_by || []).length;
+      let h = `<div class="sec-hdr" style="margin-top:0">📄 ${t.filename}</div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="stat-num">${t.classes.length}</div><div class="stat-lbl">Clases</div></div>
+        <div class="stat-box"><div class="stat-num">${t.functions.length}</div><div class="stat-lbl">Funciones</div></div>
+        <div class="stat-box">
+          <div class="stat-num" style="color:${upCount>0?'var(--accent4)':'var(--muted)'}">${upCount}</div>
+          <div class="stat-lbl">Upstream</div>
+        </div>
+      </div>`;
+
+      // ── UPSTREAM: who depends on this file ────────────────────────────────
+      const upstream = t.upstream || t.imported_by || [];
+      if (upstream.length) {
+        h += `<div class="sec-hdr">
+          <span style="color:var(--accent4)">↑ UPSTREAM</span>
+          <span style="color:var(--muted);font-weight:400"> — quién usa este archivo (${upstream.length})</span>
+        </div>`;
+        upstream.forEach(ib => {
+          const ep       = CSS.escape(ib.file);
+          const fname    = ib.file.split('/').pop();
+          const symbols  = ib.symbols || [];
+          const usedCls  = ib.used_classes  || [];
+          const usedFns  = ib.used_functions || [];
+          const hasSyms  = symbols.length > 0;
+
+          h += `<div style="background:rgba(251,146,60,.05);border:1px solid rgba(251,146,60,.15);
+                border-radius:6px;margin-bottom:6px;overflow:hidden">
+            <div class="import-row" style="cursor:pointer;padding:7px 10px;background:transparent"
+              onclick="UI.selectFile('${ep}')"
+              onmouseenter="Tooltip.showForElement(this,'${fname}','Clic para ver detalle de ${fname}')"
+              onmouseleave="Tooltip.hide()">
+              <span style="color:var(--accent4);font-size:10px;padding:1px 6px;border-radius:3px;
+                background:rgba(251,146,60,.12);flex-shrink:0;font-weight:600">upstream</span>
+              <span style="font-weight:600;color:var(--text)">${fname}</span>
+              ${hasSyms ? `<span style="color:var(--muted);font-size:10px;margin-left:auto">usa ${symbols.length} símbolo${symbols.length>1?'s':''}</span>` : ''}
+            </div>`;
+
+          if (hasSyms) {
+            h += `<div style="padding:4px 10px 8px;display:flex;flex-wrap:wrap;gap:4px">`;
+            usedCls.forEach(s => {
+              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
+                background:rgba(167,139,250,.12);color:var(--n-class)">⬡ ${s}</span>`;
+            });
+            usedFns.forEach(s => {
+              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
+                background:rgba(52,211,153,.1);color:var(--n-fn)">ƒ ${s}</span>`;
+            });
+            // symbols without classification
+            const classified = new Set([...usedCls, ...usedFns]);
+            symbols.filter(s => !classified.has(s)).forEach(s => {
+              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
+                background:var(--bg3);color:var(--dim)">${s}</span>`;
+            });
+            h += `</div>`;
+          }
+          h += `</div>`;
+        });
+      } else {
+        h += `<div class="sec-hdr"><span style="color:var(--accent4)">↑ UPSTREAM</span></div>
+        <div style="color:var(--muted);font-size:11px;padding:6px 0 12px">
+          Ningún archivo importa este — posible punto de entrada o script raíz.
+        </div>`;
+      }
+
+      // ── DOWNSTREAM: what this file imports ────────────────────────────────
+      const downstream = t.downstream || t.imports || [];
+      const downInternalList = downstream.filter(i => i.is_internal);
+      const downExternalList = downstream.filter(i => !i.is_internal);
+
+      if (downInternalList.length) {
+        h += `<div class="sec-hdr">
+          <span style="color:var(--accent2)">↓ DOWNSTREAM interno</span>
+          <span style="color:var(--muted);font-weight:400"> — archivos que usa (${downInternalList.length})</span>
+        </div>`;
+        downInternalList.forEach(imp => {
+          const fname   = (imp.resolved_path || imp.module).split('/').pop();
+          const ep      = CSS.escape(imp.resolved_path || '');
+          const symbols = imp.symbols || [];
+          const usedCls = imp.used_classes  || [];
+          const usedFns = imp.used_functions || [];
+
+          h += `<div style="background:rgba(167,139,250,.05);border:1px solid rgba(167,139,250,.15);
+                border-radius:6px;margin-bottom:6px;overflow:hidden">
+            <div class="import-row" style="cursor:pointer;padding:7px 10px"
+              onclick="${imp.resolved_path ? `UI.selectFile('${ep}')` : ''}"
+              onmouseenter="Tooltip.showForElement(this,'${imp.module}','${fname}')"
+              onmouseleave="Tooltip.hide()">
+              <span style="color:var(--accent2);font-size:10px;padding:1px 6px;border-radius:3px;
+                background:rgba(167,139,250,.12);flex-shrink:0;font-weight:600">interno</span>
+              <span style="font-weight:600;color:var(--text)">${imp.module}</span>
+              <span style="color:var(--muted);font-size:10px;margin-left:auto">${fname}</span>
+            </div>`;
+
+          if (symbols.length) {
+            h += `<div style="padding:4px 10px 8px;display:flex;flex-wrap:wrap;gap:4px">`;
+            usedCls.forEach(s => {
+              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
+                background:rgba(167,139,250,.12);color:var(--n-class)">⬡ ${s}</span>`;
+            });
+            usedFns.forEach(s => {
+              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
+                background:rgba(52,211,153,.1);color:var(--n-fn)">ƒ ${s}</span>`;
+            });
+            const classified = new Set([...usedCls, ...usedFns]);
+            symbols.filter(s => !classified.has(s)).forEach(s => {
+              h += `<span style="font-size:10px;padding:1px 7px;border-radius:3px;
+                background:var(--bg3);color:var(--dim)">${s}</span>`;
+            });
+            h += `</div>`;
+          }
+          h += `</div>`;
+        });
+      }
+
+      if (downExternalList.length) {
+        h += `<div class="sec-hdr">
+          <span style="color:var(--dim)">↓ DOWNSTREAM externo</span>
+          <span style="color:var(--muted);font-weight:400"> — dependencias del sistema (${downExternalList.length})</span>
+        </div>`;
+        downExternalList.forEach(imp => {
+          h += `<div class="import-row">
+            <span class="import-type ext">externo</span>
+            <span>${imp.module}</span>
+          </div>`;
+        });
+      }
+
+      // ── Structure of this file ────────────────────────────────────────────
+      if (t.classes.length || t.functions.length) {
+        h += `<div class="sec-hdr">Estructura interna</div>`;
+        t.classes.forEach(cls => {
+          const cid = `class:${cls.name}`;
+          h += `<div class="tree-node-hdr"
+            onmouseenter="UI._hoverNode(event,'${CSS.escape(cid)}')"
+            onmouseleave="Tooltip.hide()">
+            <span class="tree-icon" style="color:var(--n-class)">⬡</span>
+            <span class="tree-label">${cls.name}</span>
+            ${cls.inherits.length?`<span style="color:var(--muted);font-size:10px">← ${cls.inherits.join(',')}</span>`:''}
+          </div>`;
+          cls.methods.forEach(m => {
+            const mid = `method:${cls.name}.${m}`;
+            h += `<div class="tree-node-hdr" style="padding-left:16px"
+              onmouseenter="UI._hoverNode(event,'${CSS.escape(mid)}')"
+              onmouseleave="Tooltip.hide()">
+              <span class="tree-icon" style="color:var(--n-fn)">ƒ</span>
+              <span class="tree-label">${m}()</span></div>`;
+          });
+        });
+        t.functions.forEach(fn => {
+          h += `<div class="tree-node-hdr">
+            <span class="tree-icon" style="color:var(--accent4)">ƒ</span>
+            <span class="tree-label">${fn}()</span>
+          </div>`;
+        });
+      }
+
+      $('trace-panel').innerHTML = h;
+    } catch(e) {
+      $('trace-panel').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+    }
+  },
+
+  exportJSON() {
+    if (!State.analysis) return;
+    const blob = new Blob([JSON.stringify(State.analysis,null,2)],{type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'flow_inspector_analysis.json'; a.click();
+  },
+};
+
+// ════════════════════════════════════════════════
+// GRAPH ENGINE — Canvas 2D + Force Layout
+// ════════════════════════════════════════════════
+const Graph = {
+  canvas:null, ctx:null, nodes:{}, edges:[],
+  pos:{}, scale:1, ox:0, oy:0,
+  dragging:null, panStart:null, selectedNode:null,
+  physicsOn:true, animFrame:null, hlFile:null,
+
+  // ── Filter state ──────────────────────────────
+  view: 'all',                          // all | files-only | calls | imports
+  nodeFilters: { file:true, class:true, function:true, module:true },
+  edgeFilters: { IMPORTS:true, DEFINES:true, CALLS:true },
+  flowFilters: { upstream:true, downstream:true },
+
+  // Computed filtered sets (recomputed on filter change)
+  _visNodes: null,   // Set of visible node ids
+  _visEdges: null,   // filtered edges array
+
+  setView(v) {
+    this.view = v;
+    document.querySelectorAll('.view-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.view === v));
+    this._applyFilters();
+  },
+
+  toggleFilter(type) {
+    this.nodeFilters[type] = !this.nodeFilters[type];
+    const el = $(`fc-${type}`);
+    if (el) el.classList.toggle('on', this.nodeFilters[type]);
+    this._applyFilters();
+  },
+
+  toggleEdge(rel) {
+    this.edgeFilters[rel] = !this.edgeFilters[rel];
+    const el = $(`fe-${rel}`);
+    if (el) el.classList.toggle('on', this.edgeFilters[rel]);
+    this._applyFilters();
+  },
+
+  toggleFlow(dir) {
+    this.flowFilters[dir] = !this.flowFilters[dir];
+    const el = $(`fc-${dir}`);
+    if (el) el.classList.toggle('on', this.flowFilters[dir]);
+    this._applyFilters();
+  },
+
+  _applyFilters() {
+    const sel = this.selectedNode;
+    const hlFile = this.hlFile;
+
+    // Step 1: determine visible nodes by type
+    let visNodes = new Set(Object.keys(this.nodes).filter(id => {
+      const n = this.nodes[id];
+      // view presets override type filters
+      if (this.view === 'files-only') return n.type === 'file';
+      return this.nodeFilters[n.type] !== false;
+    }));
+
+    // Step 2: determine visible edges by relation
+    let visEdges = this.edges.filter(e => {
+      if (!visNodes.has(e.from) || !visNodes.has(e.to)) return false;
+      if (this.view === 'calls')   return e.relation === 'CALLS';
+      if (this.view === 'imports') return e.relation === 'IMPORTS';
+      return this.edgeFilters[e.relation] !== false;
+    });
+
+    // Step 3: upstream/downstream flow filter (only applies when a node is selected)
+    if (sel && (!this.flowFilters.upstream || !this.flowFilters.downstream)) {
+      const upSet   = new Set();  // nodes that lead TO sel
+      const downSet = new Set();  // nodes sel leads TO
+
+      // BFS upstream
+      if (this.flowFilters.upstream) {
+        const q = [sel]; const visited = new Set([sel]);
+        while (q.length) {
+          const cur = q.shift();
+          this.edges.filter(e => e.to === cur && visNodes.has(e.from)).forEach(e => {
+            if (!visited.has(e.from)) { visited.add(e.from); upSet.add(e.from); q.push(e.from); }
+          });
+        }
+      }
+      // BFS downstream
+      if (this.flowFilters.downstream) {
+        const q = [sel]; const visited = new Set([sel]);
+        while (q.length) {
+          const cur = q.shift();
+          this.edges.filter(e => e.from === cur && visNodes.has(e.to)).forEach(e => {
+            if (!visited.has(e.to)) { visited.add(e.to); downSet.add(e.to); q.push(e.to); }
+          });
+        }
+      }
+      // keep only relevant nodes
+      const keep = new Set([sel, ...upSet, ...downSet]);
+      visNodes = new Set([...visNodes].filter(id => keep.has(id)));
+      visEdges = visEdges.filter(e => visNodes.has(e.from) && visNodes.has(e.to));
+    }
+
+    this._visNodes = visNodes;
+    this._visEdges = visEdges;
+  },
+
+  init(graphData) {
+    this.canvas = $('graph-canvas');
+    this.ctx    = this.canvas.getContext('2d');
+    this.nodes  = graphData.nodes;
+    this.edges  = graphData.edges;
+    // Reset filter state
+    this.view = 'all';
+    this.nodeFilters = { file:true, class:true, function:true, module:true };
+    this.edgeFilters = { IMPORTS:true, DEFINES:true, CALLS:true };
+    this.flowFilters = { upstream:true, downstream:true };
+    // Reset UI toggles
+    ['fc-file','fc-class','fc-function','fc-module',
+     'fe-IMPORTS','fe-DEFINES','fe-CALLS','fc-upstream','fc-downstream']
+      .forEach(id => { const el=$(id); if(el) el.classList.add('on'); });
+    document.querySelectorAll('.view-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.view === 'all'));
+    this._applyFilters();
+    this._resize();
+    window.addEventListener('resize', () => this._resize());
+    this.relayout();
+    const c = this.canvas, nc = c.cloneNode(true);
+    c.parentNode.replaceChild(nc, c);
+    this.canvas = nc; this.ctx = nc.getContext('2d');
+    nc.addEventListener('mousedown', e => this._onDown(e));
+    nc.addEventListener('mousemove', e => this._onMove(e));
+    nc.addEventListener('mouseup',   ()  => this._onUp());
+    nc.addEventListener('mouseleave',()  => { this._onUp(); Tooltip.hide(0); });
+    nc.addEventListener('wheel',     e => this._onWheel(e), {passive:false});
+    nc.addEventListener('dblclick',  e => this._onDbl(e));
+    if (this.animFrame) cancelAnimationFrame(this.animFrame);
+    this._loop();
+  },
+
+  _resize() {
+    const wrap = $('graph-wrap');
+    const bar  = $('graph-filter-bar');
+    if (this.canvas && wrap) {
+      const barH = bar && bar.classList.contains('show') ? bar.offsetHeight : 0;
+      this.canvas.width  = wrap.clientWidth;
+      this.canvas.height = wrap.clientHeight - barH;
+    }
+  },
+
+  relayout() {
+    const ids = Object.keys(this.nodes);
+    const cx = (this.canvas?.width||800)/2, cy = (this.canvas?.height||600)/2;
+    const r  = Math.min(cx,cy)*0.7;
+    this.pos = {};
+    ids.forEach((id,i) => {
+      const a = (2*Math.PI*i)/ids.length;
+      this.pos[id] = { x: cx+r*Math.cos(a)+(Math.random()-.5)*60, y: cy+r*Math.sin(a)+(Math.random()-.5)*60, vx:0, vy:0 };
+    });
+    this.scale=1; this.ox=0; this.oy=0;
+  },
+
+  _loop() {
+    const tick = () => {
+      if (this.physicsOn) this._simulate();
+      this._draw();
+      this.animFrame = requestAnimationFrame(tick);
+    };
+    tick();
+  },
+
+  _simulate() {
+    const vis = this._visNodes;
+    const ids = vis ? [...vis].filter(id => this.pos[id]) : Object.keys(this.pos);
+    const k=150, damp=0.85;
+    for (let i=0;i<ids.length;i++) for (let j=i+1;j<ids.length;j++) {
+      const a=this.pos[ids[i]], b=this.pos[ids[j]];
+      if(!a||!b) continue;
+      const dx=b.x-a.x, dy=b.y-a.y, d=Math.sqrt(dx*dx+dy*dy)||1;
+      const f=(k*k)/(d*d)*0.3, fx=dx/d*f, fy=dy/d*f;
+      a.vx-=fx; a.vy-=fy; b.vx+=fx; b.vy+=fy;
+    }
+    const activeEdges = this._visEdges || this.edges;
+    activeEdges.forEach(e => {
+      const a=this.pos[e.from], b=this.pos[e.to]; if(!a||!b) return;
+      const dx=b.x-a.x, dy=b.y-a.y, d=Math.sqrt(dx*dx+dy*dy)||1, f=(d-k)*0.02;
+      a.vx+=dx/d*f; a.vy+=dy/d*f; b.vx-=dx/d*f; b.vy-=dy/d*f;
+    });
+    const cx=this.canvas.width/2, cy=this.canvas.height/2;
+    ids.forEach(id => {
+      const p=this.pos[id]; if(!p) return;
+      p.vx+=(cx-p.x)*0.002; p.vy+=(cy-p.y)*0.002;
+      p.vx*=damp; p.vy*=damp;
+      if(this.dragging!==id){p.x+=p.vx; p.y+=p.vy;}
+    });
+  },
+
+  _draw() {
+    const ctx=this.ctx; if(!ctx) return;
+    ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+    ctx.save(); ctx.translate(this.ox,this.oy); ctx.scale(this.scale,this.scale);
+    const hl=this.hlFile, sel=this.selectedNode;
+    const vis    = this._visNodes;
+    const visEdg = this._visEdges || this.edges;
+
+    const ECOL = {
+      IMPORTS: { color:'#3b82f6', alpha:0.25 },
+      DEFINES: { color:'#8b5cf6', alpha:0.25 },
+      CALLS:   { color:'#10b981', alpha:0.3  },
+    };
+
+    // Draw edges with direction arrows
+    visEdg.forEach(e => {
+      const a=this.pos[e.from], b=this.pos[e.to]; if(!a||!b) return;
+      const ec = ECOL[e.relation] || { color:'#6b7280', alpha:0.2 };
+      const isFlowUp   = sel && e.to   === sel;
+      const isFlowDown = sel && e.from === sel;
+      const emphasis   = isFlowUp || isFlowDown;
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle = emphasis
+        ? (isFlowUp ? 'rgba(251,146,60,0.7)' : 'rgba(167,139,250,0.7)')
+        : `${ec.color}${Math.round(ec.alpha*255).toString(16).padStart(2,'0')}`;
+      ctx.lineWidth = emphasis ? 1.5/this.scale : 1/this.scale;
+      ctx.stroke();
+
+      // Arrow head on edges that are emphasized
+      if (emphasis && this.scale > 0.3) {
+        const dx=b.x-a.x, dy=b.y-a.y, len=Math.sqrt(dx*dx+dy*dy)||1;
+        const ux=dx/len, uy=dy/len;
+        const mx=a.x+dx*.55, my=a.y+dy*.55;
+        const aw=4/this.scale;
+        ctx.beginPath();
+        ctx.moveTo(mx+ux*aw, my+uy*aw);
+        ctx.lineTo(mx-uy*aw*0.7, my+ux*aw*0.7);
+        ctx.lineTo(mx+uy*aw*0.7, my-ux*aw*0.7);
+        ctx.closePath();
+        ctx.fillStyle = isFlowUp ? 'rgba(251,146,60,0.8)' : 'rgba(167,139,250,0.8)';
+        ctx.fill();
+      }
+    });
+
+    const TYPE={file:{color:'#60a5fa',r:9},class:{color:'#a78bfa',r:7},function:{color:'#34d399',r:5},module:{color:'#6b7280',r:5},external:{color:'#374151',r:4}};
+    Object.entries(this.pos).forEach(([id,p]) => {
+      const node=this.nodes[id]; if(!node) return;
+      if (vis && !vis.has(id)) return;  // respect filter
+      const {color,r}=TYPE[node.type]||TYPE.module;
+      const isSel=sel===id, isHl=hl&&(id===`file:${hl}`||id.includes(hl));
+      const alpha=(!hl&&!sel)?1:(isHl||isSel)?1:0.18;
+      const rad=r/this.scale*2;
+      ctx.globalAlpha=alpha;
+      if(isSel){
+        // Glow ring
+        ctx.beginPath(); ctx.arc(p.x,p.y,rad+4/this.scale,0,Math.PI*2);
+        ctx.strokeStyle=color+'66'; ctx.lineWidth=3/this.scale; ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x,p.y,rad+1.5/this.scale,0,Math.PI*2);
+        ctx.strokeStyle='#fff'; ctx.lineWidth=1.5/this.scale; ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(p.x,p.y,rad,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
+      if(this.scale>0.5&&(node.type==='file'||isSel||isHl)){
+        const fs=10/this.scale;
+        ctx.font=`${fs}px DM Mono`; ctx.fillStyle=alpha>=0.8?'#d4d8e8':'#3d4258';
+        ctx.textAlign='center'; ctx.fillText(node.label||id,p.x,p.y-rad-3/this.scale);
+      }
+    });
+    ctx.globalAlpha=1; ctx.restore();
+  },
+
+  _s2w(sx,sy){return[(sx-this.ox)/this.scale,(sy-this.oy)/this.scale];},
+
+  _nodeAt(sx,sy) {
+    const [wx,wy]=this._s2w(sx,sy); let best=null,bestD=Infinity;
+    Object.entries(this.pos).forEach(([id,p])=>{
+      const d=Math.hypot(p.x-wx,p.y-wy), r=(this.nodes[id]?.type==='file'?9:6)/this.scale*2;
+      if(d<r&&d<bestD){best=id;bestD=d;}
+    });
+    return best;
+  },
+
+  _onDown(e) {
+    const id=this._nodeAt(e.offsetX,e.offsetY);
+    if(id){
+      this.dragging=id; this.selectedNode=id;
+      UI.showNodeDetail(id,this.nodes[id]);
+      this._applyFilters();
+    } else {
+      this.panStart={x:e.offsetX-this.ox,y:e.offsetY-this.oy};
+    }
+  },
+  _onMove(e) {
+    if(this.dragging){const[wx,wy]=this._s2w(e.offsetX,e.offsetY);this.pos[this.dragging].x=wx;this.pos[this.dragging].y=wy;}
+    else if(this.panStart){this.ox=e.offsetX-this.panStart.x;this.oy=e.offsetY-this.panStart.y;}
+    // Tooltip
+    const id=this._nodeAt(e.offsetX,e.offsetY);
+    if(id&&!this.dragging&&!this.panStart){
+      Tooltip.showForNode(id,this.nodes[id],State.analysis,e.clientX,e.clientY);
+    } else if(!id) {
+      Tooltip.hide();
+    }
+  },
+  _onUp()   {this.dragging=null;this.panStart=null;},
+  _onWheel(e){
+    e.preventDefault();
+    const f=e.deltaY<0?1.1:0.9;
+    this.ox=e.offsetX-(e.offsetX-this.ox)*f; this.oy=e.offsetY-(e.offsetY-this.oy)*f;
+    this.scale=Math.max(0.1,Math.min(8,this.scale*f));
+  },
+  _onDbl(e){
+    const id=this._nodeAt(e.offsetX,e.offsetY);
+    if(id&&this.nodes[id]?.type==='file'){const path=this.nodes[id].path;if(path)UI.selectFile(CSS.escape(path));}
+  },
+  zoomIn() {this.scale=Math.min(8,this.scale*1.2);},
+  zoomOut(){this.scale=Math.max(0.1,this.scale/1.2);},
+  fitView(){
+    const ps=Object.values(this.pos); if(!ps.length) return;
+    const xs=ps.map(p=>p.x),ys=ps.map(p=>p.y),pad=60;
+    const s=Math.min((this.canvas.width-pad*2)/(Math.max(...xs)-Math.min(...xs)||1),(this.canvas.height-pad*2)/(Math.max(...ys)-Math.min(...ys)||1));
+    this.scale=Math.min(s,3);this.ox=pad-Math.min(...xs)*this.scale;this.oy=pad-Math.min(...ys)*this.scale;
+  },
+  togglePhysics(){
+    this.physicsOn=!this.physicsOn;
+    $('btn-physics').style.color=this.physicsOn?'var(--accent3)':'var(--dim)';
+  },
+  highlightFile(path){
+    this.hlFile=path;
+    this.selectedNode=`file:${path}`;
+    this._applyFilters();
+  },
+};
+
+// ── Node detail ────────────────────────────────────────────────
+UI.showNodeDetail = function(id, node) {
+  $('detail-title').textContent = node.label||id;
+  const ei=Graph.edges.filter(e=>e.to===id).length;
+  const eo=Graph.edges.filter(e=>e.from===id).length;
+  const calls=Graph.edges.filter(e=>e.to===id&&e.relation==='CALLS').length;
+  let h=`<div class="card">
+    <div class="metric-row"><span class="metric-label">Tipo</span><span class="metric-value">${node.type}</span></div>
+    <div class="metric-row"><span class="metric-label">Entradas</span><span class="metric-value">${ei}</span></div>
+    <div class="metric-row"><span class="metric-label">Salidas</span><span class="metric-value">${eo}</span></div>
+    <div class="metric-row"><span class="metric-label">Calls entrantes</span>
+      <span class="metric-value ${calls===0&&node.type==='function'?'err':''}">${calls}</span></div>
+  </div>`;
+  if(node.decorators?.length){h+=`<div class="sec-hdr">Decoradores</div>`;node.decorators.forEach(d=>{h+=`<div class="import-row">@${d}</div>`;});}
+  if(node.inherits?.length){h+=`<div class="sec-hdr">Herencia</div>`;node.inherits.forEach(i=>{h+=`<div class="import-row">← ${i}</div>`;});}
+  if(node.type==='file'&&node.path){h+=`<br/><button class="btn" style="width:100%" onclick="UI.selectFile('${CSS.escape(node.path)}')">Ver detalle completo</button>`;}
+  $('detail-body').innerHTML=h;
+};
+
+// ════════════════════════════════════════════════
+// AI CHANGE IMPACT ENGINE
+// ════════════════════════════════════════════════
+const AI = {
+  _examples: [
+    "Agregar paginación a los endpoints de análisis",
+    "Cambiar el formato de respuesta del call graph a árbol",
+    "Agregar autenticación JWT a la API",
+    "Mover DeadCodeAnalyzer a un archivo separado",
+    "Agregar soporte para archivos TypeScript",
+  ],
+
+  onKeyChange(val) {
+    const trimmed = val.trim();
+    const isValid = trimmed.startsWith('gsk_') && trimmed.length > 20;
+    const status  = $('key-status');
+    status.textContent = isValid ? 'OK' : 'Sin key';
+    status.className   = `ai-key-status ${isValid ? 'set' : 'unset'}`;
+    this._checkSendable();
+  },
+
+  _checkSendable() {
+    const hasKey  = $('groq-key').value.trim().startsWith('gsk_');
+    const hasRepo = !!State.analysis;
+    $('ai-send').disabled = !(hasKey && hasRepo);
+    const hint = $('ai-send-hint');
+    if (!hasKey && !hasRepo) hint.textContent = 'Ingresá tu Groq API key y cargá un repositorio';
+    else if (!hasKey)        hint.textContent = 'Ingresá tu Groq API key primero';
+    else if (!hasRepo)       hint.textContent = 'Cargá un repositorio primero';
+    else                     hint.textContent = '';
+  },
+
+  onAnalysisReady(data) {
+    this._checkSendable();
+    // Show welcome
+    $('ai-no-analysis').style.display = 'none';
+    $('ai-welcome').style.display = 'flex';
+    $('ai-response').innerHTML = '';
+    // Populate examples
+    const ex = $('ai-examples');
+    ex.innerHTML = '<span style="font-size:10px;color:var(--muted);align-self:center">Ejemplos:</span>';
+    this._examples.forEach(e => {
+      const btn = document.createElement('button');
+      btn.className = 'ai-example'; btn.textContent = e;
+      btn.onclick = () => { $('ai-query').value = e; AI.analyze(); };
+      ex.appendChild(btn);
+    });
+  },
+
+  resetUI() {
+    $('ai-send').disabled = true;
+    $('ai-send-hint').textContent = 'Ingresá tu Groq API key primero';
+    $('ai-no-analysis').style.display = 'block';
+    $('ai-welcome').style.display = 'none';
+    $('ai-response').innerHTML = '';
+    $('ai-thinking').classList.remove('show');
+  },
+
+  async analyze() {
+    const query = $('ai-query').value.trim();
+    if (!query) return;
+    if (!State.analysis) { alert('Primero cargá un repositorio.'); return; }
+    const apiKey = $('groq-key').value.trim();
+    if (!apiKey) { alert('Ingresá tu Groq API key.'); return; }
+
+    $('ai-welcome').style.display = 'none';
+    $('ai-response').innerHTML = '';
+    $('ai-thinking').classList.add('show');
+    $('ai-send').disabled = true;
+    $('ai-send-icon').textContent = '⟳';
+
+    try {
+      const context = this._buildContext(State.analysis);
+      const prompt  = this._buildPrompt(query, context);
+      const result  = await this._callGroq(prompt, apiKey);
+      this._renderResult(result, query);
+    } catch(e) {
+      $('ai-response').innerHTML = `<div style="padding:16px"><div class="ai-error">Error al contactar Groq: ${e.message}</div></div>`;
+    } finally {
+      $('ai-thinking').classList.remove('show');
+      $('ai-send').disabled = false;
+      $('ai-send-icon').textContent = '◆';
+    }
+  },
+
+  _buildContext(analysis) {
+    const lines = [];
+
+    // FILE STRUCTURE — include class methods for precise AI context
+    lines.push('=== ESTRUCTURA DE ARCHIVOS ===');
+    analysis.files.forEach(f => {
+      const fname  = f.path.split('/').pop();
+      const struct = analysis.structure?.[f.path] || {};
+      lines.push(`\nARCHIVO: ${fname}`);
+
+      // Classes with ALL their methods
+      Object.entries(struct.classes || {}).slice(0, 15).forEach(([cls, cdata]) => {
+        const methods  = (cdata.methods || []).map(m => typeof m === 'string' ? m : m.name);
+        const inherits = cdata.inherits?.length ? ` (extends ${cdata.inherits.join(',')})` : '';
+        lines.push(`  CLASE ${cls}${inherits}`);
+        if (methods.length) lines.push(`    metodos: ${methods.slice(0, 25).join(', ')}`);
+      });
+
+      // Module-level functions
+      const fns = (struct.functions || []).map(fn => typeof fn === 'string' ? fn : fn.name);
+      if (fns.length) lines.push(`  funciones: ${fns.slice(0, 20).join(', ')}`);
+
+      // Internal imports
+      const deps = analysis.dependencies?.[f.path] || {};
+      const imports = (deps.internal || []);
+      if (imports.length) lines.push(`  importa: ${imports.slice(0, 10).join(', ')}`);
+    });
+
+    // CALL GRAPH — who calls what
+    lines.push('\n=== GRAFO DE LLAMADAS ===');
+    Object.entries(analysis.call_graph || {}).forEach(([fp, calls]) => {
+      const fname = fp.split('/').pop();
+      Object.entries(calls).slice(0, 12).forEach(([caller, callees]) => {
+        const names = (callees || []).slice(0, 6).map(c => typeof c === 'string' ? c : c.name);
+        if (names.length) lines.push(`${fname}::${caller}() llama a: ${names.join(', ')}`);
+      });
+    });
+
+    // IMPORT GRAPH — who imports whom
+    lines.push('\n=== GRAFO DE IMPORTS ===');
+    const importedByMap = {};
+    Object.entries(analysis.dependencies || {}).forEach(([fp, d]) => {
+      const fname = fp.split('/').pop();
+      (d.internal || []).forEach(mod => {
+        if (!importedByMap[mod]) importedByMap[mod] = [];
+        importedByMap[mod].push(fname);
+      });
+    });
+    Object.entries(importedByMap).forEach(([mod, by]) => {
+      lines.push(`${mod} es importado por: ${by.join(', ')}`);
+    });
+
+    return lines.join('\n');
+  },
+
+  _buildPrompt(query, context) {
+    return `Sos un arquitecto de software Python senior con profundo conocimiento del repositorio analizado.
+
+ESTRUCTURA COMPLETA DEL REPOSITORIO:
+${context}
+
+CONSULTA:
+"${query}"
+
+INSTRUCCIONES ESTRICTAS:
+1. Analizá la consulta: puede ser una pregunta sobre el código O un cambio a realizar.
+2. Usá ÚNICAMENTE los nombres de clases, métodos y funciones que aparecen EXACTAMENTE en la estructura del repositorio de arriba.
+3. Si la consulta es una PREGUNTA (¿cómo?, ¿qué hace?, ¿cómo está compuesto?): en el "summary" describí lo que encontrás en el código real. En "impacts" listá los elementos relevantes.
+4. Si la consulta es un CAMBIO: identificá todos los elementos que necesitan modificarse.
+5. Respondé TODO en ESPAÑOL.
+6. No inventes métodos ni clases que no estén en la estructura de arriba.
+7. Sé CONCRETO: en "reason" explicá específicamente qué hace ese método/clase según el contexto del repositorio.
+
+FORMATO DE RESPUESTA — JSON puro, sin markdown, sin texto adicional:
+{"summary":"resumen concreto basado en el código real del repositorio","risk":"low|medium|high","impacts":[{"file":"nombre_exacto.py","changes":[{"target":"NombreClase.nombre_metodo","type":"required|likely|optional","reason":"qué hace este método/clase y por qué es relevante para la consulta","location":"clase NombreClase / función / nivel módulo"}]}]}`;
+  },
+
+  async _callGroq(prompt, apiKey) {
+    const model = $('groq-model').value;
+    const response = await fetch(`${API}/api/groq`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key:     apiKey,
+        model,
+        max_tokens:  2048,
+        temperature: 0.1,
+        messages: [
+          {
+            role: "system",
+            content: "You are a precise code impact analyzer. Always respond with valid JSON only. Never include markdown, explanations, or any text outside the JSON object.",
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const msg = payload.detail || payload.error?.message || `HTTP ${response.status}`;
+      // Translate common Groq errors to Spanish
+      if (response.status === 401) throw new Error('API key inválida. Verificá tu key de Groq.');
+      if (response.status === 429) throw new Error('Rate limit alcanzado. Esperá unos segundos y reintentá.');
+      if (String(msg).includes('1001') || String(msg).includes('context')) throw new Error('El repositorio es muy grande para este modelo. Usá "Solo archivos" o un modelo con más contexto (Llama 3.3 70B).');
+      throw new Error(msg);
+    }
+
+    const text = payload.choices?.[0]?.message?.content || '';
+    // Robust JSON extraction: find first { ... } block
+    const match = text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error(`El modelo no devolvió JSON válido. Respuesta: ${text.slice(0,120)}`);
+    try {
+      return JSON.parse(match[0]);
+    } catch(e) {
+      throw new Error(`JSON malformado del modelo: ${e.message}`);
+    }
+  },
+
+  _renderResult(result, query) {
+    const riskColor = { low:'var(--accent3)', medium:'var(--warn)', high:'var(--accent5)' };
+    const riskLabel = { low:'Bajo', medium:'Medio', high:'Alto' };
+    const risk = result.risk || 'medium';
+
+    let h = `<div style="padding:16px 16px 0">`;
+
+    // Response header
+    h += `<div class="ai-response-header">
+      <span class="ai-response-badge">◆ Análisis Groq completado</span>
+      <span style="font-size:10px;color:var(--dim);margin-left:auto">Riesgo: <span style="color:${riskColor[risk]};font-weight:600">${riskLabel[risk]}</span></span>
+    </div>`;
+
+    // Summary banner
+    h += `<div class="ai-summary-banner"><strong>Cambio:</strong> ${query}<br/><br/>${result.summary}</div>`;
+
+    // Impact blocks per file
+    if (result.impacts && result.impacts.length) {
+      const totalChanges = result.impacts.reduce((a, f) => a + f.changes.length, 0);
+      h += `<div style="font-size:10px;color:var(--muted);margin-bottom:10px">${result.impacts.length} archivo${result.impacts.length!==1?'s':''} afectados · ${totalChanges} cambio${totalChanges!==1?'s':''}</div>`;
+
+      result.impacts.forEach(fileImpact => {
+        const reqCount = fileImpact.changes.filter(c=>c.type==='required').length;
+        const countLabel = reqCount > 0
+          ? `${reqCount} requerido${reqCount>1?'s':''}`
+          : `${fileImpact.changes.length} cambio${fileImpact.changes.length>1?'s':''}`;
+
+        h += `<div class="impact-block">
+          <div class="impact-block-hdr">
+            <span style="color:var(--n-file);font-size:13px">📄</span>
+            <span class="impact-file">${fileImpact.file}</span>
+            <span class="impact-count">${countLabel}</span>
+          </div>
+          <div class="impact-block-body">`;
+
+        fileImpact.changes.forEach(change => {
+          const typeLabel = { required:'Requerido', likely:'Probable', optional:'Opcional' };
+          h += `<div class="change-item">
+            <span class="change-pill ${change.type}">${typeLabel[change.type]||change.type}</span>
+            <div class="change-body">
+              <div class="change-target">${change.target}</div>
+              <div class="change-reason">${change.reason}</div>
+              ${change.location?`<div class="change-location">📍 ${change.location}</div>`:''}
+            </div>
+          </div>`;
+        });
+
+        h += `</div></div>`;
+      });
+    } else {
+      h += `<div class="empty">No se detectaron impactos directos en el repositorio analizado.</div>`;
+    }
+
+    h += `</div>`;
+    $('ai-response').innerHTML = h;
+  },
+};
+
+// ════════════════════════════════════════════════
+// PANEL RESIZERS
+// ════════════════════════════════════════════════
+(function() {
+  function makeResizer(handleId, targetId, dir) {
+    let startX, startW;
+    $(handleId).addEventListener('mousedown', e => {
+      startX = e.clientX; startW = $(targetId).getBoundingClientRect().width;
+      const move = ev => {
+        const dx = dir==='left' ? ev.clientX-startX : startX-ev.clientX;
+        $(targetId).style.width = Math.max(160, startW+dx)+'px';
+      };
+      const up = () => { document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); Graph._resize?.(); };
+      document.addEventListener('mousemove',move); document.addEventListener('mouseup',up);
+    });
+  }
+  makeResizer('resize-sidebar','sidebar','left');
+  makeResizer('resize-detail','detail','right');
+})();
+
+
+
+// Patch fetch to inject auth headers on API calls
+const _origFetch = window.fetch;
+window.fetch = function(url, opts = {}) {
+  if (typeof url === 'string' && (url.startsWith(API + '/') || (API === '' && url.startsWith('/')))) {
+    opts.headers = { ...Auth.headers(), ...(opts.headers || {}) };
+  }
+  return _origFetch(url, opts);
+};
+
+
+// ── Mobile helpers ──────────────────────────────────────
+UI.toggleSidebar = function() {
+  const sb = $('sidebar'); const ov = $('sidebar-overlay');
+  const open = sb.classList.toggle('open');
+  ov.classList.toggle('show', open);
+};
+UI.closeDetail = function() {
+  $('detail').classList.remove('open');
+};
+UI.openDetail = function() {
+  if (window.innerWidth < 768) $('detail').classList.add('open');
+};
+// Auto-open detail on file select (mobile)
+const _origSelectFile = UI.selectFile.bind(UI);
+UI.selectFile = function(pathEscaped) {
+  _origSelectFile(pathEscaped);
+  UI.openDetail();
+};
+
+// ════════════════════════════════════════════════
+// WEB PROJECT — Files Tab
+// ════════════════════════════════════════════════
+UI.renderWebFilesTab = function(data) {
+  const s = data.summary;
+  let h = `<div class="stats-grid">
+    <div class="stat-box"><div class="stat-num">${s.html_files||0}</div><div class="stat-lbl">HTML</div></div>
+    <div class="stat-box"><div class="stat-num">${s.css_files||0}</div><div class="stat-lbl">CSS</div></div>
+    <div class="stat-box"><div class="stat-num">${s.js_files||0}</div><div class="stat-lbl">JS/TS</div></div>
+  </div>`;
+  (data.files||[]).forEach(f => {
+    const typeIcon = {html:'🌐',css:'🎨',js:'⚡',ts:'⚡'}[f.type]||'📄';
+    const typeColor = {html:'var(--accent)',css:'var(--accent3)',js:'var(--warn)'}[f.type]||'var(--dim)';
+    h += `<div class="card">
+      <div class="card-title" style="color:${typeColor}">${typeIcon} ${f.name} <span class="mode-badge web">${f.type.toUpperCase()}</span></div>`;
+    if (f.type === 'html') {
+      if (f.title) h += `<div class="metric-row"><span class="metric-label">Título</span><span class="metric-value" style="color:var(--text)">${f.title}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Scripts externos</span><span class="metric-value accent">${f.scripts}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Stylesheets</span><span class="metric-value accent">${f.stylesheets}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">IDs únicos</span><span class="metric-value">${f.ids}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Clases CSS usadas</span><span class="metric-value">${f.classes_count}</span></div>`;
+      if (f.forms) h += `<div class="metric-row"><span class="metric-label">Formularios</span><span class="metric-value">${f.forms}</span></div>`;
+      if (f.custom_elements?.length) h += `<div class="metric-row"><span class="metric-label">Web Components</span><span class="metric-value accent">${f.custom_elements.join(', ')}</span></div>`;
+    } else if (f.type === 'css') {
+      h += `<div class="metric-row"><span class="metric-label">Reglas CSS</span><span class="metric-value accent">${f.rule_count}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Variables CSS</span><span class="metric-value">${f.variables}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Media queries</span><span class="metric-value">${f.media_queries}</span></div>`;
+      if (f.keyframes?.length) h += `<div class="metric-row"><span class="metric-label">Animaciones</span><span class="metric-value">${f.keyframes.join(', ')}</span></div>`;
+      if (f.imports?.length) h += `<div class="metric-row"><span class="metric-label">@imports</span><span class="metric-value">${f.imports.join(', ')}</span></div>`;
+    } else if (f.type === 'js') {
+      h += `<div class="metric-row"><span class="metric-label">Funciones</span><span class="metric-value accent">${f.functions?.length||0}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Clases JS</span><span class="metric-value">${f.classes?.length||0}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Imports</span><span class="metric-value">${f.imports?.length||0}</span></div>`;
+      h += `<div class="metric-row"><span class="metric-label">Exports</span><span class="metric-value">${f.exports?.length||0}</span></div>`;
+      if (f.event_listeners?.length) h += `<div class="metric-row"><span class="metric-label">Event listeners</span><span class="metric-value">${f.event_listeners.join(', ')}</span></div>`;
+      if (f.fetch_calls?.length) h += `<div class="metric-row"><span class="metric-label">Fetch calls</span><span class="metric-value warn">${f.fetch_calls.join(', ')}</span></div>`;
+      if (f.api_endpoints?.length) h += `<div class="metric-row"><span class="metric-label">Endpoints API</span><span class="metric-value accent">${f.api_endpoints.join(', ')}</span></div>`;
+    }
+    h += `</div>`;
+  });
+  $('files-panel').innerHTML = h;
+};
+
+
+
+// ════════════════════════════════════════════════
+// RUNTIME ENGINE v4
+// ════════════════════════════════════════════════
+const Runtime = {
+  _mode:       'static',   // 'static' | 'live' | 'replay'
+  _flowId:     null,
+  _frames:     [],
+  _frameIdx:   0,
+  _liveTimer:  null,
+  _eventCount: 0,
+
+  // ── Init ──────────────────────────────────────
+  init(flowId) {
+    this._flowId = flowId;
+    this._mode   = 'static';
+    document.getElementById('runtime-bar').classList.add('show');
+    this._updateModeButtons();
+  },
+
+  setMode(mode) {
+    clearInterval(this._liveTimer);
+    this._mode = mode;
+    this._updateModeButtons();
+
+    const isReplay = mode === 'replay';
+    const isLive   = mode === 'live';
+
+    ['rt-prev','rt-next','rt-timeline','rt-frame-info','rt-payload'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = isReplay ? '' : 'none';
+    });
+    const cntEl = document.getElementById('rt-event-count');
+    if (cntEl) cntEl.style.display = isLive ? '' : 'none';
+
+    const dot = document.getElementById('rt-live-dot');
+    dot.classList.toggle('pulsing', isLive);
+
+    if (mode === 'static') {
+      Graph.hlFile = null; Graph.selectedNode = null; Graph._applyFilters(); return;
+    }
+    if (mode === 'live')   { this._startLive(); return; }
+    if (mode === 'replay') { this._loadReplay(); }
+  },
+
+  _updateModeButtons() {
+    ['static','live','replay'].forEach(m => {
+      const btn = document.getElementById('rt-btn-' + m);
+      if (btn) btn.classList.toggle('active', this._mode === m);
+    });
+  },
+
+  // ── Live mode ────────────────────────────────
+  async _startLive() {
+    if (!this._flowId) return;
+    const tick = async () => {
+      try {
+        const r = await fetch(`${API}/flows/${encodeURIComponent(this._flowId)}/live?window_ms=4000`,
+                              { headers: Auth.headers() });
+        if (!r.ok) return;
+        const d = await r.json();
+        this._eventCount = d.active_nodes?.length || 0;
+        const cntEl = document.getElementById('rt-event-count');
+        if (cntEl) cntEl.textContent = `${this._eventCount} nodos activos`;
+        this._highlightActive(d.active_nodes || []);
+      } catch(_) {}
+    };
+    tick();
+    this._liveTimer = setInterval(tick, 1500);
+  },
+
+  _highlightActive(activeNodeIds) {
+    if (!State.analysis?.graph) return;
+    // Temporarily override Graph highlight with runtime active set
+    const active = new Set(activeNodeIds);
+    Graph._rtActiveNodes = active;
+    Graph._needsRedraw   = true;
+  },
+
+  // ── Replay mode ──────────────────────────────
+  async _loadReplay() {
+    if (!this._flowId) return;
+    UI.showLoading('Cargando replay…');
+    try {
+      const r = await fetch(`${API}/flows/${encodeURIComponent(this._flowId)}/replay`,
+                            { headers: Auth.headers() });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      this._frames   = d.frames || [];
+      this._frameIdx = 0;
+      const slider = document.getElementById('rt-timeline');
+      slider.max   = Math.max(0, this._frames.length - 1);
+      slider.value = 0;
+      this._renderFrame(0);
+    } catch(e) {
+      UI.setStatus('Replay error: ' + e.message, 'err');
+    } finally {
+      UI.hideLoading();
+    }
+  },
+
+  scrub(val) {
+    this._frameIdx = parseInt(val);
+    this._renderFrame(this._frameIdx);
+  },
+
+  prevFrame() {
+    if (this._frameIdx > 0) { this._frameIdx--; this._renderFrame(this._frameIdx); }
+  },
+
+  nextFrame() {
+    if (this._frameIdx < this._frames.length - 1) { this._frameIdx++; this._renderFrame(this._frameIdx); }
+  },
+
+  _renderFrame(idx) {
+    const frame = this._frames[idx];
+    if (!frame) return;
+
+    // Update slider
+    const slider = document.getElementById('rt-timeline');
+    slider.value = idx;
+
+    // Frame counter
+    const info = document.getElementById('rt-frame-info');
+    info.textContent = `${idx + 1} / ${this._frames.length}`;
+
+    // Payload preview
+    const payEl = document.getElementById('rt-payload');
+    payEl.textContent = frame.payload_preview || '';
+
+    // Highlight active nodes on canvas
+    const active = new Set(frame.active_nodes || []);
+    Graph._rtActiveNodes = active;
+    Graph.selectedNode   = frame.highlight || null;
+    Graph._applyFilters();
+
+    // Step buttons
+    document.getElementById('rt-prev').disabled = idx === 0;
+    document.getElementById('rt-next').disabled = idx >= this._frames.length - 1;
+
+    // Detail panel: show event payload
+    if (frame.event) {
+      const ev = frame.event;
+      $('detail-title').textContent = ev.action || 'event';
+      let h = `<div class="card">
+        <div class="metric-row"><span class="metric-label">Acción</span><span class="metric-value accent">${ev.action}</span></div>
+        <div class="metric-row"><span class="metric-label">Nodo</span><span class="metric-value">${ev.resolved_node_id || ev.node_id}</span></div>
+        <div class="metric-row"><span class="metric-label">Timestamp</span><span class="metric-value">${new Date(ev.timestamp_ms).toISOString().split('T')[1].slice(0,12)}</span></div>
+      </div>`;
+      if (ev.payload && Object.keys(ev.payload).length) {
+        h += `<div class="sec-hdr">Payload</div>`;
+        for (const [k,v] of Object.entries(ev.payload).slice(0,10)) {
+          h += `<div class="metric-row"><span class="metric-label">${k}</span><span class="metric-value" style="word-break:break-all;font-size:10px">${String(v).slice(0,80)}</span></div>`;
+        }
+      }
+      $('detail-body').innerHTML = h;
+    }
+  },
+};
+
+// ── Patch Graph._draw to overlay runtime highlights ──────
+const _origDraw = Graph._draw.bind(Graph);
+Graph._draw = function() {
+  _origDraw();
+  if (!Graph._rtActiveNodes?.size) return;
+  const ctx = this.ctx; if(!ctx) return;
+  ctx.save(); ctx.translate(this.ox,this.oy); ctx.scale(this.scale,this.scale);
+  for (const [id, p] of Object.entries(this.pos)) {
+    if (!Graph._rtActiveNodes.has(id)) continue;
+    const node = this.nodes[id]; if (!node) continue;
+    const r = (node.type==='file'?9:6)/this.scale*2 + 6/this.scale;
+    // Glow ring
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(52,211,153,0.7)'; ctx.lineWidth = 2/this.scale; ctx.stroke();
+    // Pulse dot center
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3/this.scale, 0, Math.PI*2);
+    ctx.fillStyle = '#34d399'; ctx.fill();
+  }
+  ctx.restore();
+};
+
+// Patch UI.onAnalysis to init Runtime with the new flow
+const _origOnAnalysis = UI.onAnalysis.bind(UI);
+UI.onAnalysis = function(data) {
+  _origOnAnalysis(data);
+  // Auto-create flow and attach analysis to backend (best-effort)
+  const flowId = 'flow-' + Date.now().toString(36);
+  State.currentFlowId = flowId;
+  fetch(`${API}/flows/${flowId}/attach`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...Auth.headers() },
+    body: JSON.stringify(data),
+  }).catch(() => {});
+  Runtime.init(flowId);
+};
+
+
+// ════════════════════════════════════════════════
+// RUNTIME v4 — Fase 2 extensions
+// ════════════════════════════════════════════════
+
+// ── MiniTimeline ─────────────────────────────────
+const MiniTimeline = {
+  _frames: [],
+  _width:  0,
+
+  build(frames) {
+    this._frames = frames;
+    const track = document.getElementById('mt-track');
+    if (!frames.length) { track.innerHTML = ''; return; }
+    const mt = document.getElementById('mini-timeline');
+    mt.classList.add('show');
+    this._width = mt.offsetWidth;
+
+    const t0   = frames[0].timestamp_ms;
+    const span = Math.max(frames[frames.length - 1].timestamp_ms - t0, 1);
+    let dotsHtml = '';
+
+    frames.forEach((f, i) => {
+      const pct  = 100 * (f.timestamp_ms - t0) / span;
+      const act  = f.event?.action || '';
+      const cls  = act === 'exception' ? 'error' : act.includes('api') || act.includes('fetch') ? 'api' : 'call';
+      dotsHtml += `<div class="mt-dot ${cls}" style="left:${pct.toFixed(2)}%"
+        onmouseenter="MiniTimeline.hover(${i},${pct})" onmouseleave="MiniTimeline.unhover()"></div>`;
+    });
+    track.innerHTML = dotsHtml;
+
+    mt.addEventListener('click', (e) => {
+      const pct = e.offsetX / mt.offsetWidth;
+      const idx = Math.round(pct * (frames.length - 1));
+      Runtime.scrub(idx);
+      document.getElementById('rt-timeline').value = idx;
+    });
+  },
+
+  setCursor(frameIdx) {
+    if (!this._frames.length) return;
+    const pct = 100 * frameIdx / Math.max(this._frames.length - 1, 1);
+    document.getElementById('mt-cursor').style.left = pct.toFixed(2) + '%';
+  },
+
+  hover(idx, pct) {
+    const f   = this._frames[idx];
+    if (!f) return;
+    const tt  = document.getElementById('mt-tooltip');
+    tt.style.display = 'block';
+    tt.style.left    = pct.toFixed(1) + '%';
+    tt.textContent   = f.payload_preview || f.event?.action || '';
+  },
+
+  unhover() {
+    document.getElementById('mt-tooltip').style.display = 'none';
+  },
+};
+
+// ── Heat Map overlay on canvas ──────────────────
+const HeatMap = {
+  _heat: {},
+  _enabled: false,
+
+  apply(heat) {
+    this._heat    = heat || {};
+    this._enabled = Object.keys(heat).length > 0;
+  },
+
+  clear() {
+    this._heat = {}; this._enabled = false;
+  },
+
+  getAlpha(nodeId) {
+    if (!this._enabled) return null;
+    return this._heat[nodeId] ?? 0;
+  },
+};
+
+// ── Sessions Panel ───────────────────────────────
+const Sessions = {
+  _sessions: [],
+
+  async load() {
+    try {
+      const r = await fetch(`${API}/flows`, { headers: Auth.headers() });
+      if (!r.ok) return;
+      const d = await r.json();
+      this._sessions = d.flows || [];
+      this.render();
+    } catch(_) {}
+  },
+
+  render() {
+    const panel = document.getElementById('sessions-panel');
+    if (!this._sessions.length) {
+      panel.innerHTML = '<div class="empty">No hay sesiones registradas aún.</div>';
+      return;
+    }
+    panel.innerHTML = this._sessions.map(s => `
+      <div class="session-card ${s.id === State.currentFlowId ? 'active' : ''}"
+           onclick="Sessions.select('${CSS.escape(s.id)}')">
+        <div class="sc-hdr">
+          <span class="sc-id">${s.id}</span>
+          <span class="sc-type-badge ${s.type}">${s.type}</span>
+        </div>
+        <div class="sc-metrics">
+          <div class="sc-metric"><div class="sc-metric-n">${s.total_events}</div><div class="sc-metric-l">Eventos</div></div>
+          <div class="sc-metric"><div class="sc-metric-n">${s.total_nodes}</div><div class="sc-metric-l">Nodos</div></div>
+          <div class="sc-metric"><div class="sc-metric-n" style="color:${s.runtime_nodes > 0 ? 'var(--accent3)' : 'var(--muted)'}">${s.runtime_nodes}</div><div class="sc-metric-l">Runtime</div></div>
+        </div>
+      </div>
+    `).join('');
+  },
+
+  async select(idEscaped) {
+    const id = this._sessions.find(s => CSS.escape(s.id) === idEscaped)?.id || idEscaped;
+    State.currentFlowId = id;
+    Runtime.init(id);
+    this.render();
+    await this.loadCoverage(id);
+  },
+
+  async loadCoverage(flowId) {
+    try {
+      const r = await fetch(`${API}/flows/${encodeURIComponent(flowId)}/coverage`, { headers: Auth.headers() });
+      if (!r.ok) return;
+      const d = await r.json();
+      this.renderCoverageInDetail(d);
+    } catch(_) {}
+  },
+
+  renderCoverageInDetail(cov) {
+    const pct  = cov.coverage_pct || 0;
+    const circ = 2 * Math.PI * 20;
+    const dash = (pct / 100) * circ;
+    let h = `
+      <div class="sec-hdr" style="margin-top:0">Cobertura de código</div>
+      <div class="coverage-ring-wrap">
+        <svg class="coverage-ring-svg" width="52" height="52" viewBox="0 0 52 52">
+          <circle cx="26" cy="26" r="20" fill="none" stroke="var(--border)" stroke-width="4"/>
+          <circle cx="26" cy="26" r="20" fill="none" stroke="var(--accent3)" stroke-width="4"
+            stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}"
+            stroke-linecap="round" transform="rotate(-90 26 26)"/>
+        </svg>
+        <div class="coverage-ring-text">
+          <div class="cov-pct">${pct.toFixed(1)}%</div>
+          <div class="cov-lbl">${cov.covered_nodes} / ${cov.total_static_nodes} nodos</div>
+        </div>
+      </div>`;
+
+    if (cov.error_nodes?.length) {
+      h += `<div class="sec-hdr">Nodos con errores (${cov.error_nodes.length})</div>`;
+      cov.error_nodes.slice(0, 5).forEach(n => {
+        h += `<div class="dc-row high"><span class="dc-name">${n}</span><span class="dc-score high">err</span></div>`;
+      });
+    }
+
+    if (cov.hot_nodes?.length) {
+      h += `<div class="sec-hdr">Más llamados</div>`;
+      cov.hot_nodes.slice(0, 6).forEach(n => {
+        const dur = n.avg_duration_ms ? ` · ${n.avg_duration_ms.toFixed(1)}ms` : '';
+        h += `<div class="metric-row">
+          <span class="metric-label" style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px">${n.name}</span>
+          <span class="metric-value accent" style="font-size:10px">${n.call_count}×${dur}</span>
+        </div>`;
+      });
+    }
+    $('detail-title').textContent = 'Cobertura';
+    $('detail-body').innerHTML = h;
+  },
+
+  async exportSession(flowId) {
+    const url = `${API}/flows/${encodeURIComponent(flowId)}/export`;
+    window.open(url + '?include_events=true&include_frames=true', '_blank');
+  },
+};
+
+// ── Patch Runtime._renderFrame to show call stack + trail ─
+const _origRenderFrame = Runtime._renderFrame.bind(Runtime);
+Runtime._renderFrame = function(idx) {
+  _origRenderFrame(idx);
+  const frame = this._frames[idx];
+  if (!frame) return;
+
+  // Update mini-timeline cursor
+  MiniTimeline.setCursor(idx);
+
+  // Apply heat map
+  HeatMap.apply(frame.heat || {});
+
+  // Append call stack + execution trail to detail
+  const existing = $('detail-body').innerHTML;
+  let extra = '';
+
+  if (frame.call_stack?.length) {
+    extra += `<div class="sec-hdr">Call stack (${frame.stack_depth})</div>
+      <div class="call-stack-panel">`;
+    const stack = [...frame.call_stack].reverse(); // show top first
+    stack.slice(0, 8).forEach((nid, i) => {
+      const lbl = nid.replace(/^(function:|method:|file:)/, '');
+      extra += `<div class="call-stack-frame ${i === 0 ? 'top' : ''}">
+        <span class="stack-idx">${stack.length - i}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lbl}</span>
+      </div>`;
+    });
+    extra += '</div>';
+  }
+
+  if (frame.execution_path?.length > 1) {
+    extra += `<div class="sec-hdr">Execution trail</div><div class="exec-trail">`;
+    frame.execution_path.slice(-8).forEach((nid, i, arr) => {
+      const lbl = nid.replace(/^(function:|method:|file:|dynamic:)/, '').slice(0, 20);
+      const isLatest = i === arr.length - 1;
+      extra += `<span class="trail-node ${isLatest ? 'latest' : ''}">${lbl}</span>`;
+    });
+    extra += '</div>';
+  }
+
+  if (extra) $('detail-body').innerHTML = existing + extra;
+};
+
+// ── Patch Runtime._loadReplay to also build MiniTimeline ──
+const _origLoadReplay = Runtime._loadReplay.bind(Runtime);
+Runtime._loadReplay = async function() {
+  await _origLoadReplay();
+  if (this._frames.length) {
+    MiniTimeline.build(this._frames);
+  }
+};
+
+// ── Patch Graph._draw to overlay heat map ────────────────
+const _origDrawPhase1 = Graph._draw.bind(Graph);
+Graph._draw = function() {
+  _origDrawPhase1();
+  if (!HeatMap._enabled) return;
+  const ctx = this.ctx; if(!ctx) return;
+  ctx.save(); ctx.translate(this.ox, this.oy); ctx.scale(this.scale, this.scale);
+  for (const [id, p] of Object.entries(this.pos)) {
+    const alpha = HeatMap.getAlpha(id);
+    if (alpha === null || alpha < 0.05) continue;
+    const node = this.nodes[id]; if (!node) continue;
+    const r = (node.type === 'file' ? 9 : 6) / this.scale * 2;
+    // Heat ring — amber for hot nodes
+    ctx.beginPath(); ctx.arc(p.x, p.y, r + 4/this.scale, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(251,191,36,${(alpha * 0.8).toFixed(2)})`;
+    ctx.lineWidth = 2/this.scale; ctx.stroke();
+  }
+  ctx.restore();
+};
+
+// ── Patch UI.switchTab to load sessions ──────────────────
+const _origSwitchTab = UI.switchTab.bind(UI);
+UI.switchTab = function(tab) {
+  _origSwitchTab(tab);
+  if (tab === 'sessions') Sessions.load();
+};
+
+// ── Add Export button to Runtime bar ─────────────────────
+(function() {
+  const bar = document.getElementById('runtime-bar');
+  if (!bar) return;
+  const btn = document.createElement('button');
+  btn.className = 'rt-mode-btn';
+  btn.textContent = '⬇ Export';
+  btn.title = 'Exportar sesión como JSON';
+  btn.onclick = () => {
+    if (State.currentFlowId) Sessions.exportSession(State.currentFlowId);
+  };
+  bar.appendChild(btn);
+})();
+
+
+// ════════════════════════════════════════════════
+// AUDIT ENGINE — Fase 3
+// ════════════════════════════════════════════════
+const Audit = {
+  _report:   null,
+  _flowId:   null,
+  _filter:   null,   // active severity filter
+
+  // ── Load projects & sessions into selects ────
+  async loadSelects() {
+    try {
+      // Projects
+      const pr = await fetch(`${API}/projects`, { headers: Auth.headers() });
+      if (pr.ok) {
+        const pd = await pr.json();
+        const projSel = $('audit-project');
+        projSel.innerHTML = '<option value="">Todos los proyectos</option>';
+        (pd.projects || []).forEach(p => {
+          projSel.innerHTML += `<option value="${p.project_id}">${p.project_id} (${p.flow_count} sesiones)</option>`;
+        });
+        projSel.onchange = () => Audit.loadFlows(projSel.value);
+      }
+
+      // All flows
+      await Audit.loadFlows('');
+    } catch(_) {}
+  },
+
+  async loadFlows(projectId) {
+    try {
+      const url = projectId
+        ? `${API}/projects/${encodeURIComponent(projectId)}/flows`
+        : `${API}/flows`;
+      const r = await fetch(url, { headers: Auth.headers() });
+      if (!r.ok) return;
+      const d = await r.json();
+      const flows = d.flows || d.reports || [];
+      const flowSel = $('audit-flow');
+      const baseSel = $('audit-baseline');
+      flowSel.innerHTML = '<option value="">Seleccionar sesión…</option>';
+      baseSel.innerHTML = '<option value="">Sin baseline</option>';
+      flows.forEach(f => {
+        const label = `${f.id}  (${f.total_events || 0} eventos)`;
+        flowSel.innerHTML += `<option value="${f.id}">${label}</option>`;
+        baseSel.innerHTML += `<option value="${f.id}">${label}</option>`;
+      });
+      $('audit-run-btn').disabled = false;
+    } catch(_) {}
+  },
+
+  // ── Generate report ──────────────────────────
+  async run() {
+    const flowId    = $('audit-flow').value;
+    const auditType = $('audit-type').value;
+    const baseline  = $('audit-baseline').value;
+    if (!flowId) { UI.setStatus('Seleccioná una sesión primero', 'err'); return; }
+
+    this._flowId = flowId;
+    $('audit-run-btn').disabled = true;
+    $('audit-body').innerHTML = '<div class="empty" style="padding:24px">Generando reporte…</div>';
+
+    try {
+      const r = await fetch(`${API}/flows/${encodeURIComponent(flowId)}/audit`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', ...Auth.headers() },
+        body:    JSON.stringify({
+          audit_type:       auditType,
+          baseline_flow_id: baseline || null,
+        }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.detail || 'Error al generar reporte');
+      }
+      this._report = await r.json();
+      this._filter = null;
+      this.renderReport(this._report);
+    } catch(e) {
+      $('audit-body').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+    } finally {
+      $('audit-run-btn').disabled = false;
+    }
+  },
+
+  // ── Render report ────────────────────────────
+  renderReport(r) {
+    const SEV_COLOR = {critical:'#f87171', high:'var(--warn)', medium:'var(--accent4)', low:'var(--accent3)', info:'var(--dim)'};
+    const riskFill  = `hsl(${Math.round(120 - r.risk_score * 1.2)},70%,55%)`;
+
+    let h = '';
+
+    // ── Risk banner ──────────────────────────────
+    h += `<div class="risk-banner">
+      <div class="risk-grade ${r.risk_grade}">${r.risk_grade}</div>
+      <div class="risk-details">
+        <div class="risk-label-txt">${r.risk_label}</div>
+        <div style="font-size:10px;color:var(--muted)">
+          ${r.audit_type} · ${r.flow_id} · ${r.generated_at.split('T')[0]}
+          · firma: <code style="color:var(--accent2)">${r.signature}</code>
+        </div>
+        <div class="risk-score-bar-wrap">
+          <div class="risk-score-bar">
+            <div class="risk-score-fill" style="width:${r.risk_score}%;background:${riskFill}"></div>
+          </div>
+          <span class="risk-score-num">${r.risk_score}/100</span>
+        </div>
+      </div>
+      <span class="audit-type-badge ${r.audit_type}">${r.audit_type}</span>
+      <button class="btn" onclick="Audit.download()" style="padding:4px 10px;font-size:10px;flex-shrink:0">⬇ JSON</button>
+    </div>`;
+
+    // ── Executive summary ──────────────────────
+    const ex = r.executive || {};
+    h += `<div class="stats-grid" style="margin-bottom:12px">
+      <div class="stat-box"><div class="stat-num">${ex.function_calls || 0}</div><div class="stat-lbl">Llamadas</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:${ex.exceptions > 0 ? 'var(--accent5)' : 'var(--accent3)'}">${ex.exceptions || 0}</div><div class="stat-lbl">Excepciones</div></div>
+      <div class="stat-box"><div class="stat-num">${(r.coverage?.coverage_pct || 0).toFixed(0)}%</div><div class="stat-lbl">Cobertura</div></div>
+    </div>`;
+
+    // ── Session diff (if baseline) ─────────────
+    if (r.session_diff) {
+      const d = r.session_diff;
+      const delta = d.coverage_delta;
+      h += `<div class="card" style="margin-bottom:12px">
+        <div class="card-title" style="color:var(--accent2)">Comparación con baseline</div>
+        <div class="diff-section">
+          <div class="diff-title">Cobertura</div>
+          <div class="diff-item ${delta >= 0 ? 'diff-new' : 'diff-lost'}">
+            ${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}% vs sesión anterior
+          </div>
+        </div>`;
+      if (d.new_errors.length) {
+        h += `<div class="diff-section"><div class="diff-title">Errores nuevos (${d.new_errors.length})</div>`;
+        d.new_errors.slice(0, 5).forEach(n => {
+          h += `<div class="diff-item diff-err"><span class="diff-pill lost">new</span>${n}</div>`;
+        });
+        h += '</div>';
+      }
+      if (d.fixed_errors.length) {
+        h += `<div class="diff-section"><div class="diff-title">Errores resueltos (${d.fixed_errors.length})</div>`;
+        d.fixed_errors.slice(0, 5).forEach(n => {
+          h += `<div class="diff-item diff-fix"><span class="diff-pill new">fix</span>${n}</div>`;
+        });
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
+    // ── Findings summary pills ─────────────────
+    const fs = r.findings_summary || {};
+    const total_f = Object.values(fs).reduce((a, b) => a + b, 0);
+    h += `<div class="findings-summary">
+      <span style="font-size:10px;color:var(--muted);align-self:center">${total_f} hallazgo${total_f !== 1 ? 's' : ''}</span>`;
+    ['critical','high','medium','low','info'].forEach(sev => {
+      const cnt = fs[sev] || 0;
+      if (!cnt) return;
+      h += `<div class="sev-pill ${this._filter === sev ? 'active' : ''}" onclick="Audit.filterBySev('${sev}')">
+        <span class="sev-dot" style="background:${SEV_COLOR[sev]}"></span>${sev} (${cnt})
+      </div>`;
+    });
+    h += '</div>';
+
+    // ── Findings list ──────────────────────────
+    const findings = (r.findings || []).filter(f =>
+      !this._filter || f.severity === this._filter
+    );
+    findings.forEach((f, i) => {
+      const remediation = f.remediation
+        ? `<div class="finding-remediation">⤷ ${f.remediation}</div>` : '';
+      const nodes = f.node_ids?.length
+        ? `<div class="finding-nodes">${f.node_ids.slice(0, 8).map(n =>
+            `<span class="finding-node-tag" onclick="Audit.highlightNode('${CSS.escape(n)}')" title="${n}">${n.replace(/^(function:|method:|file:|class:)/,'')}</span>`
+          ).join('')}</div>` : '';
+      h += `<div class="finding-card">
+        <div class="finding-hdr" onclick="Audit.toggleFinding(${i})">
+          <span class="finding-sev ${f.severity}">${f.severity}</span>
+          <span class="finding-title">${f.title}</span>
+          <span style="color:var(--muted);font-size:11px">▾</span>
+        </div>
+        <div class="finding-body" id="finding-${i}">
+          <p class="finding-desc">${f.description}</p>
+          ${nodes}
+          ${remediation}
+        </div>
+      </div>`;
+    });
+
+    if (!findings.length) {
+      h += `<div class="empty">${this._filter ? `Sin hallazgos de severidad "${this._filter}"` : '¡Sin hallazgos detectados!'}</div>`;
+    }
+
+    $('audit-body').innerHTML = h;
+  },
+
+  toggleFinding(idx) {
+    const el = document.getElementById(`finding-${idx}`);
+    if (el) el.classList.toggle('open');
+  },
+
+  filterBySev(sev) {
+    this._filter = this._filter === sev ? null : sev;
+    if (this._report) this.renderReport(this._report);
+  },
+
+  highlightNode(nodeIdEscaped) {
+    if (!State.analysis?.graph) return;
+    const nodeId = Object.keys(State.analysis.graph.nodes)
+      .find(k => CSS.escape(k) === nodeIdEscaped) || nodeIdEscaped;
+    Graph.selectedNode = nodeId;
+    Graph._applyFilters();
+    UI.switchTab('graph');
+  },
+
+  // ── Error clusters ───────────────────────────
+  async loadErrors(flowId) {
+    try {
+      const r = await fetch(`${API}/flows/${encodeURIComponent(flowId)}/errors`, { headers: Auth.headers() });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!d.clusters?.length) return;
+      let h = `<div class="sec-hdr">Clusters de error (${d.clusters.length})</div>
+        <div class="card" style="padding:0">`;
+      d.clusters.slice(0, 15).forEach(c => {
+        h += `<div class="error-cluster" onclick="Audit.loadNodeTimeline('${CSS.escape(flowId)}','${CSS.escape(c.node_id)}')">
+          <span class="ec-type">${c.exception_type}</span>
+          <span class="ec-node">${c.node_id.replace(/^(function:|method:|file:)/,'')}</span>
+          <span class="ec-count">${c.count}×</span>
+        </div>`;
+      });
+      h += '</div>';
+      $('audit-body').innerHTML += h;
+    } catch(_) {}
+  },
+
+  async loadNodeTimeline(flowIdEscaped, nodeIdEscaped) {
+    const flowId  = flowIdEscaped.replace(/\/g, '');
+    const nodeId  = nodeIdEscaped.replace(/\/g, '');
+    try {
+      const r = await fetch(
+        `${API}/flows/${encodeURIComponent(flowId)}/nodes/${encodeURIComponent(nodeId)}/timeline?limit=50`,
+        { headers: Auth.headers() }
+      );
+      if (!r.ok) return;
+      const d = await r.json();
+      $('detail-title').textContent = nodeId.replace(/^(function:|method:|file:)/,'');
+      let h = `<div class="sec-hdr" style="margin-top:0">Timeline del nodo (${d.events.length})</div>`;
+      d.events.forEach(ev => {
+        const col = ev.action === 'exception' ? 'var(--accent5)' : ev.action === 'function_return' ? 'var(--accent3)' : 'var(--accent)';
+        h += `<div class="metric-row" style="padding:3px 0">
+          <span class="metric-label" style="font-size:9px;color:var(--muted)">${new Date(ev.timestamp_ms).toISOString().split('T')[1].slice(0,12)}</span>
+          <span style="font-size:10px;color:${col}">${ev.action}</span>
+        </div>`;
+        const dur = ev.payload?.duration_ms;
+        if (dur !== undefined) {
+          h += `<div style="font-size:9px;color:var(--muted);text-align:right;padding:0 0 3px">${dur.toFixed(1)}ms</div>`;
+        }
+      });
+      $('detail-body').innerHTML = h;
+    } catch(_) {}
+  },
+
+  // ── Full-text search ─────────────────────────
+  async search(query) {
+    if (!query.trim()) return;
+    const sev = $('audit-search-sev').value;
+    UI.showLoading('Buscando…');
+    try {
+      const params = new URLSearchParams({ q: query, limit: 100 });
+      if (sev) params.set('severity', sev);
+      const flowId = $('audit-flow').value;
+      if (flowId) params.set('flow_id', flowId);
+      const r = await fetch(`${API}/search/events?${params}`, { headers: Auth.headers() });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      this.renderSearchResults(d);
+    } catch(e) {
+      $('audit-body').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+    } finally {
+      UI.hideLoading();
+    }
+  },
+
+  renderSearchResults(d) {
+    let h = `<div style="font-size:11px;color:var(--dim);padding:0 2px 10px">${d.count} resultado${d.count !== 1 ? 's' : ''} para "${d.query}"</div>`;
+    if (!d.results?.length) {
+      h += '<div class="empty">Sin resultados.</div>';
+    } else {
+      h += '<div class="card" style="padding:0">';
+      d.results.forEach(ev => {
+        const ts  = new Date(ev.timestamp_ms).toISOString().split('T')[1].slice(0,12);
+        const nid = (ev.resolved_node_id || ev.node_id).replace(/^(function:|method:|file:)/,'');
+        const pay = JSON.stringify(ev.payload || {}).slice(0, 80);
+        h += `<div class="search-result-row" onclick="Audit.loadNodeTimeline('${CSS.escape(ev.flow_id_source || ev.flow_id)}','${CSS.escape(ev.resolved_node_id || ev.node_id)}')">
+          <span class="sr-action">${ev.action}</span>
+          <span class="sr-node">${nid}</span>
+          <span class="sr-payload">${pay}</span>
+          <span class="sr-ts">${ts}</span>
+        </div>`;
+      });
+      h += '</div>';
+    }
+    $('audit-body').innerHTML = h;
+  },
+
+  // ── Download report ──────────────────────────
+  download() {
+    if (!this._report) return;
+    const blob = new Blob([JSON.stringify(this._report, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `audit_${this._report.audit_id}.json`;
+    a.click();
+  },
+};
+
+// Patch switchTab to load audit data
+const _origSwitchTabAudit = UI.switchTab.bind(UI);
+UI.switchTab = function(tab) {
+  _origSwitchTabAudit(tab);
+  if (tab === 'audit') Audit.loadSelects();
+};
+
+// Patch onAnalysis to set audit flow selector
+const _origOnAnalysisAudit = UI.onAnalysis.bind(UI);
+UI.onAnalysis = function(data) {
+  _origOnAnalysisAudit(data);
+  // Pre-fill audit flow selector with current flow
+  setTimeout(() => {
+    const sel = $('audit-flow');
+    if (sel && State.currentFlowId) {
+      // Add option if not present
+      if (![...sel.options].some(o => o.value === State.currentFlowId)) {
+        sel.innerHTML += `<option value="${State.currentFlowId}">${State.currentFlowId} (actual)</option>`;
+      }
+      sel.value = State.currentFlowId;
+      $('audit-run-btn').disabled = false;
+    }
+  }, 500);
+};
+
+// ════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════
+Tooltip.init();
+UI.setStatus('Listo — subí un repositorio para comenzar');
+// Auth init (check if login required)
+Auth.init();
+
+</script>
+</body>
+</html>

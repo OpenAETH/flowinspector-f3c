@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Flow Inspector — Python Repository Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#090b0f;--bg2:#0d1018;--bg3:#12151f;
+  --panel:#161b28;--border:#1e2438;--border2:#2a3050;
+  --text:#c8cfe0;--dim:#5a6080;--muted:#2a3050;
+  --a1:#5b9cf6;--a2:#9b6ef7;--a3:#2ec993;--a4:#f97c3a;--a5:#f16464;
+  --grad1:linear-gradient(135deg,#1a2a4a,#2a1a4a);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);line-height:1.7;overflow-x:hidden}
+
+/* NOISE OVERLAY */
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity:.4;
+}
+
+/* NAV */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 48px;height:56px;
+  background:rgba(9,11,15,.85);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+}
+.nav-logo{
+  font-family:'Syne',sans-serif;font-size:17px;font-weight:900;
+  color:var(--a1);letter-spacing:.5px;
+}
+.nav-logo span{color:var(--a2)}
+.nav-links{display:flex;gap:24px;align-items:center}
+.nav-links a{
+  color:var(--dim);font-size:12px;text-decoration:none;
+  transition:color .15s;
+}
+.nav-links a:hover{color:var(--text)}
+.nav-cta{
+  padding:7px 20px;background:var(--a1);color:#050810;
+  border-radius:6px;font-weight:600;font-size:12px;
+  text-decoration:none;transition:all .15s;font-family:inherit;
+  border:none;cursor:pointer;
+}
+.nav-cta:hover{background:#7ab4ff;transform:translateY(-1px)}
+
+/* HERO */
+.hero{
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:80px 24px 60px;
+  position:relative;text-align:center;
+}
+
+/* animated graph bg */
+#hero-canvas{
+  position:absolute;inset:0;opacity:.25;z-index:0;pointer-events:none;
+}
+
+.hero-content{position:relative;z-index:1;max-width:780px}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:5px 14px;border:1px solid var(--a2);border-radius:20px;
+  font-size:11px;color:var(--a2);margin-bottom:24px;
+  background:rgba(155,110,247,.08);
+}
+.hero-badge::before{
+  content:'';width:6px;height:6px;border-radius:50%;
+  background:var(--a2);animation:pulse .9s infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
+
+.hero-title{
+  font-family:'Syne',sans-serif;font-size:clamp(38px,6vw,72px);
+  font-weight:900;line-height:1.08;margin-bottom:20px;
+  letter-spacing:-1px;
+}
+.hero-title .t1{color:#fff}
+.hero-title .t2{
+  background:linear-gradient(90deg,var(--a1),var(--a2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.hero-sub{
+  font-size:15px;color:var(--dim);max-width:520px;margin:0 auto 36px;
+  font-weight:300;
+}
+.hero-ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.cta-primary{
+  padding:12px 32px;background:var(--a1);color:#050810;
+  border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;
+  text-decoration:none;transition:all .2s;display:inline-flex;align-items:center;gap:8px;
+}
+.cta-primary:hover{background:#7ab4ff;transform:translateY(-2px);box-shadow:0 8px 24px rgba(91,156,246,.3)}
+.cta-secondary{
+  padding:12px 32px;border:1px solid var(--border2);color:var(--text);
+  border-radius:8px;font-size:13px;font-family:inherit;
+  text-decoration:none;transition:all .2s;display:inline-flex;align-items:center;gap:8px;
+  background:var(--bg2);
+}
+.cta-secondary:hover{border-color:var(--a2);color:var(--a2);transform:translateY(-2px)}
+
+.hero-stats{
+  display:flex;gap:40px;justify-content:center;margin-top:60px;
+  padding-top:40px;border-top:1px solid var(--border);
+  flex-wrap:wrap;
+}
+.hs{text-align:center}
+.hs-num{
+  font-family:'Syne',sans-serif;font-size:28px;font-weight:900;
+  color:var(--a1);display:block;
+}
+.hs-lbl{color:var(--dim);font-size:11px}
+
+/* SECTION */
+section{padding:80px 48px;max-width:1100px;margin:0 auto}
+.sec-label{
+  font-size:10px;font-weight:600;letter-spacing:2px;
+  color:var(--a2);text-transform:uppercase;margin-bottom:12px;
+}
+.sec-title{
+  font-family:'Syne',sans-serif;font-size:clamp(24px,3.5vw,40px);
+  font-weight:800;color:#fff;margin-bottom:16px;line-height:1.2;
+}
+.sec-sub{color:var(--dim);font-size:14px;max-width:520px;margin-bottom:48px}
+
+/* FEATURES GRID */
+.features-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;
+}
+.feat-card{
+  background:var(--panel);border:1px solid var(--border);border-radius:12px;
+  padding:24px;transition:all .2s;position:relative;overflow:hidden;
+}
+.feat-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--clr),transparent);
+  opacity:0;transition:opacity .2s;
+}
+.feat-card:hover{border-color:var(--border2);transform:translateY(-3px)}
+.feat-card:hover::before{opacity:1}
+.feat-icon{font-size:24px;margin-bottom:12px;display:block}
+.feat-title{
+  font-family:'Syne',sans-serif;font-size:15px;font-weight:700;
+  color:#fff;margin-bottom:8px;
+}
+.feat-body{color:var(--dim);font-size:12px;line-height:1.8}
+.feat-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.tag{
+  padding:2px 8px;border-radius:3px;font-size:10px;
+  background:var(--bg3);color:var(--dim);border:1px solid var(--border);
+}
+
+/* HOW IT WORKS */
+.how-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.how-step{
+  display:flex;flex-direction:column;align-items:flex-start;
+  padding:24px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:10px;position:relative;
+}
+.how-num{
+  font-family:'Syne',sans-serif;font-size:36px;font-weight:900;
+  color:var(--muted);margin-bottom:8px;line-height:1;
+}
+.how-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#fff;margin-bottom:6px}
+.how-body{color:var(--dim);font-size:12px}
+
+/* API SECTION */
+.api-wrap{
+  background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  overflow:hidden;
+}
+.api-tabs{
+  display:flex;border-bottom:1px solid var(--border);
+  background:var(--bg3);
+}
+.api-tab{
+  padding:10px 20px;font-size:12px;color:var(--dim);cursor:pointer;
+  border-right:1px solid var(--border);transition:all .12s;
+  background:none;border-top:none;border-left:none;border-bottom:none;
+  font-family:inherit;
+}
+.api-tab.active{background:var(--panel);color:var(--a1)}
+.api-body{padding:24px;overflow-x:auto}
+pre{
+  font-family:'DM Mono',monospace;font-size:12px;
+  color:var(--text);line-height:1.8;
+}
+.c-kw{color:var(--a2)}
+.c-str{color:var(--a3)}
+.c-cm{color:var(--dim);font-style:italic}
+.c-fn{color:var(--a1)}
+.c-num{color:var(--a4)}
+
+/* ENDPOINTS TABLE */
+.ep-table{width:100%;border-collapse:collapse}
+.ep-table th{
+  text-align:left;padding:8px 12px;font-size:10px;font-weight:600;
+  letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.ep-table td{
+  padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);
+  vertical-align:middle;
+}
+.ep-table tr:last-child td{border-bottom:none}
+.ep-table tr:hover td{background:var(--bg3)}
+.method{
+  padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;
+  font-family:inherit;
+}
+.method.get{background:rgba(46,201,147,.15);color:var(--a3)}
+.method.post{background:rgba(91,156,246,.15);color:var(--a1)}
+
+/* FOOTER */
+footer{
+  padding:40px 48px;border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:16px;
+}
+.footer-logo{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;color:var(--dim)}
+.footer-links{display:flex;gap:20px}
+.footer-links a{color:var(--dim);font-size:11px;text-decoration:none;transition:color .15s}
+.footer-links a:hover{color:var(--text)}
+.footer-copy{color:var(--muted);font-size:10px}
+
+@media(max-width:600px){
+  nav{padding:0 20px}
+  section{padding:60px 20px}
+  footer{padding:30px 20px;flex-direction:column;text-align:center}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">Flow<span>Inspector</span></div>
+  <div class="nav-links">
+    <a href="#features">Características</a>
+    <a href="#how">Cómo funciona</a>
+    <a href="#api">API</a>
+    <a href="./" class="nav-cta">Abrir App →</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <canvas id="hero-canvas"></canvas>
+  <div class="hero-content">
+    <div class="hero-badge">Python &amp; Web Repository Analyzer · v3.0</div>
+    <h1 class="hero-title">
+      <span class="t1">Explorá el flujo<br/>de tu</span>
+      <span class="t2"> código Python</span>
+    </h1>
+    <p class="hero-sub">
+      Analizá estructura, dependencias, call graph y dead code de cualquier repositorio Python.
+      Interfaz web interactiva con grafo de fuerzas en tiempo real.
+    </p>
+    <div class="hero-ctas">
+      <a href="./" class="cta-primary">⬡ Abrir Flow Inspector</a>
+      <a href="#features" class="cta-secondary">Ver características ↓</a>
+    </div>
+    <div class="hero-stats">
+      <div class="hs"><span class="hs-num">AST</span><span class="hs-lbl">Análisis estático</span></div>
+      <div class="hs"><span class="hs-num">4</span><span class="hs-lbl">Formatos de entrada</span></div>
+      <div class="hs"><span class="hs-num">5</span><span class="hs-lbl">Endpoints API</span></div>
+      <div class="hs"><span class="hs-num">0</span><span class="hs-lbl">Dependencias externas de análisis</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="sec-label">Características</div>
+  <h2 class="sec-title">Todo lo que necesitás para entender tu codebase</h2>
+  <p class="sec-sub">Análisis completo basado en AST, sin necesidad de ejecutar el código.</p>
+  <div class="features-grid">
+    <div class="feat-card" style="--clr:var(--a1)">
+      <span class="feat-icon">⬡</span>
+      <div class="feat-title">Grafo Interactivo</div>
+      <div class="feat-body">Visualizá las dependencias entre archivos, clases y funciones en un canvas 2D con física en tiempo real. Arrastrá, hacé zoom y pan.</div>
+      <div class="feat-tags"><span class="tag">Force layout</span><span class="tag">Canvas 2D</span><span class="tag">Drag & drop</span></div>
+    </div>
+    <div class="feat-card" style="--clr:var(--a2)">
+      <span class="feat-icon">⚠</span>
+      <div class="feat-title">Dead Code Detector</div>
+      <div class="feat-body">Score graduado 0–100% para cada función y método. Exenciones inteligentes para dunders, decoradores de frameworks y herencia.</div>
+      <div class="feat-tags"><span class="tag">Scoring</span><span class="tag">Exenciones</span><span class="tag">Call graph</span></div>
+    </div>
+    <div class="feat-card" style="--clr:var(--a3)">
+      <span class="feat-icon">↕</span>
+      <div class="feat-title">Trazabilidad</div>
+      <div class="feat-body">Para cada archivo: quién lo importa (upstream), qué importa (downstream), impacto transitivo y profundidad de dependencias.</div>
+      <div class="feat-tags"><span class="tag">Upstream</span><span class="tag">Downstream</span><span class="tag">Impacto</span></div>
+    </div>
+    <div class="feat-card" style="--clr:var(--a4)">
+      <span class="feat-icon">📦</span>
+      <div class="feat-title">Múltiples Fuentes</div>
+      <div class="feat-body">Subí archivos .py sueltos, un .zip del proyecto completo, o pegá directamente un dump de texto en formato machete o legacy.</div>
+      <div class="feat-tags"><span class="tag">.py files</span><span class="tag">.zip</span><span class="tag">Dump text</span></div>
+    </div>
+    <div class="feat-card" style="--clr:var(--a1)">
+      <span class="feat-icon">🔌</span>
+      <div class="feat-title">API REST completa</div>
+      <div class="feat-body">FastAPI con 5 endpoints documentados automáticamente. Exportá el análisis completo en JSON para integrar con tus propias herramientas.</div>
+      <div class="feat-tags"><span class="tag">FastAPI</span><span class="tag">JSON</span><span class="tag">OpenAPI</span></div>
+    </div>
+    <div class="feat-card" style="--clr:var(--a5)">
+      <span class="feat-icon">🏗</span>
+      <div class="feat-title">Análisis AST Profundo</div>
+      <div class="feat-body">Parseo de clases, métodos, funciones globales, decoradores, herencia y llamadas entre funciones incluyendo el número de línea.</div>
+      <div class="feat-tags"><span class="tag">AST</span><span class="tag">Decoradores</span><span class="tag">Herencia</span></div>
+    </div>
+  
+    <div class="feat-card" style="--clr:var(--a3)">
+      <span class="feat-icon">🌐</span>
+      <div class="feat-title">Análisis Web (HTML/CSS/JS)</div>
+      <div class="feat-body">Trazabilidad completa de proyectos web: qué CSS estiliza qué HTML, qué JS importa a quién, selectores, funciones, event listeners y endpoints de API.</div>
+      <div class="feat-tags"><span class="tag">HTML parser</span><span class="tag">CSS selectors</span><span class="tag">JS imports</span><span class="tag">Trazabilidad</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" style="background:var(--bg2);max-width:100%;padding:80px 48px">
+  <div style="max-width:1100px;margin:0 auto">
+    <div class="sec-label">Cómo funciona</div>
+    <h2 class="sec-title">De código a insight en segundos</h2>
+    <p class="sec-sub">El pipeline de análisis completo, explicado.</p>
+    <div class="how-grid">
+      <div class="how-step">
+        <div class="how-num">01</div>
+        <div class="how-title">Cargá tu repo</div>
+        <div class="how-body">Subí archivos .py, un .zip, o pegá un dump. El launcher acepta directorios directamente desde la terminal.</div>
+      </div>
+      <div class="how-step">
+        <div class="how-num">02</div>
+        <div class="how-title">Parseo AST</div>
+        <div class="how-body">Cada archivo se parsea con el módulo `ast` de Python. Errores de sintaxis se reportan sin detener el análisis.</div>
+      </div>
+      <div class="how-step">
+        <div class="how-num">03</div>
+        <div class="how-title">Análisis multi-capa</div>
+        <div class="how-body">Dependencias, estructura (clases/funciones/decoradores), call graph con líneas, y grafo de nodos/aristas.</div>
+      </div>
+      <div class="how-step">
+        <div class="how-num">04</div>
+        <div class="how-title">Dead code scoring</div>
+        <div class="how-body">Cada función y método recibe un score basado en callers, tipo, decoradores y convenciones de nombre.</div>
+      </div>
+      <div class="how-step">
+        <div class="how-num">05</div>
+        <div class="how-title">Visualización</div>
+        <div class="how-body">El grafo se renderiza en canvas 2D con force layout. Seleccioná nodos para ver detalle completo.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- API -->
+<section id="api">
+  <div class="sec-label">API</div>
+  <h2 class="sec-title">REST API documentada</h2>
+  <p class="sec-sub">Integrá el análisis en tus propias herramientas. Documentación automática en <code style="color:var(--a1)">/docs</code>.</p>
+
+  <div class="api-wrap" style="margin-bottom:32px">
+    <div class="api-tabs">
+      <button class="api-tab active" onclick="showApiTab('endpoints')">Endpoints</button>
+      <button class="api-tab" onclick="showApiTab('curl')">cURL</button>
+      <button class="api-tab" onclick="showApiTab('python')">Python</button>
+    </div>
+    <div class="api-body" id="api-endpoints">
+      <table class="ep-table">
+        <tr><th>Método</th><th>Ruta</th><th>Descripción</th></tr>
+        <tr><td><span class="method get">GET</span></td><td><code>/health</code></td><td style="color:var(--dim)">Health check del servidor</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/analyze/dump</code></td><td style="color:var(--dim)">Analiza un dump de texto (JSON body)</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/analyze/upload</code></td><td style="color:var(--dim)">Sube archivos .py (multipart)</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/analyze/zip</code></td><td style="color:var(--dim)">Sube un .zip con archivos .py</td></tr>
+        <tr><td><span class="method post">POST</span></td><td><code>/traceability</code></td><td style="color:var(--dim)">Trazabilidad de un archivo específico</td></tr>
+      </table>
+    </div>
+    <div class="api-body" id="api-curl" style="display:none">
+<pre><span class="c-cm"># Subir archivos .py</span>
+<span class="c-fn">curl</span> -X POST http://127.0.0.1:8000/analyze/upload \
+  -F <span class="c-str">"files=@mi_modulo.py"</span> \
+  -F <span class="c-str">"files=@otro.py"</span>
+
+<span class="c-cm"># Subir ZIP</span>
+<span class="c-fn">curl</span> -X POST http://127.0.0.1:8000/analyze/zip \
+  -F <span class="c-str">"file=@mi_proyecto.zip"</span>
+
+<span class="c-cm"># Pegar dump</span>
+<span class="c-fn">curl</span> -X POST http://127.0.0.1:8000/analyze/dump \
+  -H <span class="c-str">"Content-Type: application/json"</span> \
+  -d <span class="c-str">'{"content": "..."}'</span></pre>
+    </div>
+    <div class="api-body" id="api-python" style="display:none">
+<pre><span class="c-kw">import</span> requests
+
+<span class="c-cm"># Subir archivos .py</span>
+files = [
+    (<span class="c-str">"files"</span>, open(<span class="c-str">"mi_modulo.py"</span>, <span class="c-str">"rb"</span>)),
+    (<span class="c-str">"files"</span>, open(<span class="c-str">"otro.py"</span>, <span class="c-str">"rb"</span>)),
+]
+r = requests.<span class="c-fn">post</span>(<span class="c-str">"http://127.0.0.1:8000/analyze/upload"</span>, files=files)
+analysis = r.json()
+
+<span class="c-cm"># Acceder al resumen</span>
+<span class="c-fn">print</span>(analysis[<span class="c-str">"summary"</span>])
+
+<span class="c-cm"># Dead code de alto riesgo</span>
+<span class="c-kw">for</span> fp, items <span class="c-kw">in</span> analysis[<span class="c-str">"dead_code"</span>][<span class="c-str">"items"</span>].items():
+    high = [i <span class="c-kw">for</span> i <span class="c-kw">in</span> items <span class="c-kw">if</span> i[<span class="c-str">"score"</span>] >= <span class="c-num">0.7</span>]
+    <span class="c-kw">if</span> high:
+        <span class="c-fn">print</span>(f<span class="c-str">"{fp}: {len(high)} elementos dead code"</span>)</pre>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">Flow Inspector v2</div>
+  <div class="footer-links">
+    <a href="./">Abrir app</a>
+    <a href="#features">Características</a>
+    <a href="#api">API</a>
+  </div>
+  <div class="footer-copy">Análisis estático de Python &amp; Web · MIT License · build with 🧡 by <a href="https://aetheryon.com" target="_blank" style="color:var(--a2);text-decoration:none">AETHERYON Systems</a></div>
+</footer>
+
+<script>
+// API tabs
+function showApiTab(tab){
+  ['endpoints','curl','python'].forEach(t=>{
+    document.getElementById(`api-${t}`).style.display = t===tab?'block':'none';
+    document.querySelectorAll('.api-tab').forEach((el,i)=>{
+      el.classList.toggle('active', ['endpoints','curl','python'][i]===tab);
+    });
+  });
+}
+
+// Hero canvas — animated dependency graph
+(()=>{
+  const canvas = document.getElementById('hero-canvas');
+  const ctx    = canvas.getContext('2d');
+  let W, H, nodes = [], edges = [], raf;
+
+  function resize(){
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Generate fake nodes
+  const n = 32;
+  for(let i=0;i<n;i++){
+    const types = ['file','class','function','module'];
+    const t = types[Math.floor(Math.random()*types.length)];
+    nodes.push({
+      x: Math.random()*window.innerWidth,
+      y: Math.random()*window.innerHeight,
+      vx:(Math.random()-.5)*.4,
+      vy:(Math.random()-.5)*.4,
+      r: t==='file'?5:t==='class'?4:3,
+      color: t==='file'?'#5b9cf6':t==='class'?'#9b6ef7':t==='function'?'#2ec993':'#4b5270',
+    });
+  }
+  // Random edges
+  for(let i=0;i<40;i++){
+    edges.push({a:Math.floor(Math.random()*n), b:Math.floor(Math.random()*n)});
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    // edges
+    edges.forEach(e=>{
+      const a=nodes[e.a], b=nodes[e.b];
+      ctx.beginPath();
+      ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle='rgba(91,156,246,0.12)';
+      ctx.lineWidth=.8;
+      ctx.stroke();
+    });
+    // nodes
+    nodes.forEach(n=>{
+      ctx.beginPath();
+      ctx.arc(n.x,n.y,n.r,0,Math.PI*2);
+      ctx.fillStyle=n.color;
+      ctx.fill();
+    });
+    // animate
+    nodes.forEach(n=>{
+      n.x+=n.vx; n.y+=n.vy;
+      if(n.x<0||n.x>W) n.vx*=-1;
+      if(n.y<0||n.y>H) n.vy*=-1;
+    });
+    raf = requestAnimationFrame(draw);
+  }
+  draw();
+})();
+</script>
+</body>
+</html>
