@@ -3438,7 +3438,14 @@ Tooltip.init();
 UI.setStatus('Listo — subí un repositorio para comenzar');
 // Auth init (check if login required)
 Auth.init();
-
+// EXPOSER GLOBAL - Hace que los onclick funcionen
+window.UI = UI;
+window.Graph = Graph;
+window.AI = AI;
+window.Runtime = Runtime;
+window.Sessions = Sessions;
+window.Audit = Audit;
+window.Auth = Auth;
 </script>
 </body>
 </html>
