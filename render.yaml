@@ -4,7 +4,11 @@ services:
     runtime: python
     region: oregon
     plan: free
-    buildCommand: pip install -r requirements.txt
+    # Las dependencias opcionales (tree-sitter) se instalan "best effort": si no hay wheel para la
+    # plataforma, el build continúa y el motor usa `ast` (ver docs/UNIFIED_GRAPH.md).
+    buildCommand: |
+      pip install -r requirements.txt
+      pip install --only-binary=:all: -r requirements-optional.txt || echo "optional deps skipped"
     startCommand: uvicorn Backend.app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -13,5 +17,11 @@ services:
         sync: false
       - key: PORT
         value: 10000
+      # Motor de análisis: "unified" (default) | "legacy"
+      - key: FI_ENGINE
+        value: unified
+      # SCIP (scip-python, requiere Node >= 16 y `npm i -g @sourcegraph/scip-python`): desactivado por defecto.
+      # - key: FI_SCIP
+      #   value: "1"
     healthCheckPath: /health
     autoDeploy: true

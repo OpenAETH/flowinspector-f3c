@@ -1,4 +1,4 @@
-# Flow Inspector v3.0 — Python & Web Repository Analyzer
+# Flow Inspector v3.1 — Python & Web Repository Analyzer
 
 > Analiza estructura, dependencias, call graph y dead code de proyectos **Python, HTML, CSS y JavaScript**. Deploy en Render.com con un solo archivo `render.yaml`.
 
@@ -51,6 +51,7 @@ FlowInspector/
 | `POST` | `/analyze/web-zip` | Sube `.zip` con proyecto web |
 | `POST` | `/analyze/web-dump` | Analiza dump de proyecto web |
 | `POST` | `/traceability` | Trazabilidad de un archivo |
+| `POST` | `/graph/unified` | Grafo unificado completo de un `.zip` de Python |
 | `POST` | `/api/groq` | Proxy Groq para Change Impact AI |
 
 ---
@@ -117,6 +118,20 @@ Backend/app.py
 ├── WebDependencyGraphBuilder → Grafo web
 └── TraceabilityAnalyzer
 ```
+
+---
+
+## 🧬 Grafo unificado de símbolos (v3.1)
+
+El análisis Python construye un grafo único con **identidad de símbolo por archivo** (sin colisiones entre
+`process` de `a.py` y `process` de `b.py`), imports relativos resueltos, herencia/`super()`, tipos locales y
+trazabilidad `archivo:línea` con nivel de confianza en cada arista. La UI y los endpoints existentes no cambian.
+
+- Motor: `Backend/graph/` · Documentación, métricas de validación y límites: [`docs/UNIFIED_GRAPH.md`](docs/UNIFIED_GRAPH.md)
+- Opcionales: tree-sitter (`requirements-optional.txt`) y SCIP (`FI_SCIP=1`). Sin ellos el motor usa `ast`.
+- `FI_ENGINE=legacy` vuelve al analizador anterior. Nuevo endpoint `POST /graph/unified`.
+- Tests: `pip install -r requirements-dev.txt && pytest -q`
+- Licencias de dependencias: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
 
 ---
 

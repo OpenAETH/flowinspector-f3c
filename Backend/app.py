@@ -15,7 +15,24 @@ from collections import defaultdict
 from typing import Dict, List, Optional
 import ast, os, re, json, zipfile, io, secrets, pathlib
 
-app = FastAPI(title="Flow Inspector API", version="3.0.0")
+import logging
+from collections import Counter
+
+try:                                    # uvicorn Backend.app:app
+    from .graph import UnifiedGraphBuilder as _UGB
+    from .graph import py_ts as _py_ts, scip_enricher as _scip
+    _UNIFIED_OK = True
+except ImportError:
+    try:                                # cd Backend && uvicorn app:app
+        from graph import UnifiedGraphBuilder as _UGB
+        from graph import py_ts as _py_ts, scip_enricher as _scip
+        _UNIFIED_OK = True
+    except ImportError:
+        _UNIFIED_OK = False
+
+_log = logging.getLogger("flowinspector")
+
+app = FastAPI(title="Flow Inspector API", version="3.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # ─── AUTH ────────────────────────────────────────────────
@@ -318,6 +335,13 @@ class DeadCodeAnalyzer:
                     counts[name] += 1
                     if short != name: counts[short] += 1
         self._callers = dict(counts)
+        self._uid_callers = self.data.get("uid_callers")      # {uid: n} del grafo unificado (sin colisiones)
+
+    def _n(self, item, name):
+        """Cantidad de callers: por identidad de símbolo si hay grafo unificado, si no por nombre."""
+        if self._uid_callers is not None and isinstance(item, dict) and item.get("uid"):
+            return self._uid_callers.get(item["uid"], 0)
+        return self._callers.get(name, 0)
 
     def _run(self):
         structure = self.data.get("structure", {}); scores, items = {}, {}
@@ -328,12 +352,12 @@ class DeadCodeAnalyzer:
                 has_inh = bool(cdata.get("inherits"))
                 for m in cdata["methods"]:
                     mn = m["name"] if isinstance(m, dict) else m; mdec = m.get("decorators", []) if isinstance(m, dict) else []
-                    s = self._score(mn, mdec, self._callers.get(mn, 0), has_inh); key = f"{cname}.{mn}"
+                    s = self._score(mn, mdec, self._n(m, mn), has_inh); key = f"{cname}.{mn}"
                     fp_scores[key] = s; summary["total_elements"] += 1; self._tally(summary, s)
                     if s > 0: fp_items.append({"name": key, "kind": "method", "class": cname, "score": s, "label": self._lbl(s)})
             for func in data["functions"]:
                 fn = func["name"] if isinstance(func, dict) else func; fdec = func.get("decorators", []) if isinstance(func, dict) else []
-                s = self._score(fn, fdec, self._callers.get(fn, 0), False)
+                s = self._score(fn, fdec, self._n(func, fn), False)
                 fp_scores[fn] = s; summary["total_elements"] += 1; self._tally(summary, s)
                 if s > 0: fp_items.append({"name": fn, "kind": "function", "class": None, "score": s, "label": self._lbl(s)})
             scores[fp] = fp_scores; items[fp] = sorted(fp_items, key=lambda x: -x["score"])
@@ -551,7 +575,7 @@ def run_web_analysis(files):
 # PYTHON ORCHESTRATOR
 # ═══════════════════════════════════════════════════════════
 
-def run_analysis(files):
+def run_analysis_legacy(files):
     parser = ASTParser(); dep_a = FileDependencyAnalyzer(); struct_a = StructureAnalyzer()
     call_a = CallGraphAnalyzer(); gb = DependencyGraphBuilder()
     parsed = parser.parse(files); deps = dep_a.analyze(parsed, known_files=set(files.keys()))
@@ -569,12 +593,97 @@ def run_analysis(files):
     return {"files": file_list, "structure": struct, "dependencies": norm_deps, "call_graph": calls, "graph": graph, "dead_code": dc, "project_type": "python", "summary": {"total_files": len(files), "total_classes": sum(len(s["classes"]) for s in struct.values()), "total_functions": sum(len(s["functions"]) for s in struct.values()), "total_nodes": len(graph["nodes"]), "total_edges": len(graph["edges"]), "dead_code_summary": dc["summary"], "project_type": "python"}}
 
 
+def _engine_info():
+    info = {"unified": _UNIFIED_OK and os.environ.get("FI_ENGINE", "unified").lower() != "legacy"}
+    if _UNIFIED_OK:
+        info["tree_sitter"] = _py_ts.version_info() if os.environ.get("FI_TREE_SITTER", "1") != "0" else {"available": False, "disabled": True}
+        info["scip"] = {"enabled": _scip.enabled(), "binary": bool(_scip.find_binary())}
+    return info
+
+
+def _uid_caller_counts(ug):
+    """
+    Callers por símbolo para el detector de dead code. Es deliberadamente conservador: una
+    llamada que solo se conoce por nombre (`x.run()` con receptor desconocido) suma a TODOS los
+    símbolos con ese nombre, de modo que la identidad por archivo no genere falsos "dead".
+    """
+    by_name = {}
+    for sym in ug.symbols.values():
+        if sym.kind in ("function", "method"):
+            by_name.setdefault(sym.name, []).append(sym.uid)
+    n = Counter()
+    for e in ug.edges:
+        if e.relation != "CALLS":
+            continue
+        if not e.external:
+            n[e.dst] += 1
+        elif e.resolved_by in ("unresolved", "module-attr-missing") or e.dst.startswith("ext:*."):
+            for uid in by_name.get(e.dst[4:].split(".")[-1], []):
+                n[uid] += 1
+    return n
+
+
+UNIFIED_MAX_EDGES = int(os.environ.get("FI_UNIFIED_MAX_EDGES", "20000"))
+
+
+def _unified_payload(ug):
+    """Grafo unificado completo si es chico; si no, solo metadatos (el completo se pide a /graph/unified)."""
+    d = ug.to_dict()
+    if len(ug.edges) <= UNIFIED_MAX_EDGES:
+        return d
+    return {"version": d["version"], "backends": d["backends"], "stats": d["stats"],
+            "diagnostics": d["diagnostics"][:50], "truncated": True,
+            "note": f"{len(ug.edges)} aristas > FI_UNIFIED_MAX_EDGES={UNIFIED_MAX_EDGES}; usar POST /graph/unified"}
+
+
+def _run_analysis_unified(files):
+    extractor = _py_ts.TreeSitterExtractor() if (_py_ts.available() and os.environ.get("FI_TREE_SITTER", "1") != "0") else None
+    enrichers = []
+    if _scip.enabled():
+        enrichers.append(_scip.make_enricher(_scip.run_scip(files)))
+    builder = _UGB(files, fallback_extractor=extractor, enrichers=enrichers)
+    ug = builder.build()
+    b = builder.legacy_bundle()
+    struct, deps, calls, graph = b["structure"], b["dependencies"], b["call_graph"], b["graph"]
+    analysis = {"files": files, "dependencies": deps, "structure": struct, "call_graph": calls, "graph": graph,
+                "uid_callers": dict(_uid_caller_counts(ug))}
+    dc = DeadCodeAnalyzer(analysis).analyze()
+    file_list = []
+    for fp in sorted(files.keys()):
+        fs = struct.get(fp, {"classes": {}, "functions": []}); fd = deps.get(fp, {})
+        di = dc["items"].get(fp, [])
+        file_list.append({"path": fp, "name": os.path.basename(fp), "type": "python", "classes": list(fs["classes"].keys()),
+                          "functions": [f["name"] for f in fs["functions"]], "imports_total": len(fd.get("all", [])),
+                          "imports_internal": len(fd.get("internal", [])), "imports_external": len(fd.get("external", [])),
+                          "dead_code_count": len(di), "dead_code_high": sum(1 for d in di if d["score"] >= 0.70)})
+    return {"files": file_list, "structure": struct, "dependencies": deps, "call_graph": calls, "graph": graph,
+            "dead_code": dc, "project_type": "python", "engine": "unified", "unified": _unified_payload(ug),
+            "summary": {"total_files": len(files), "total_classes": sum(len(s["classes"]) for s in struct.values()),
+                        "total_functions": sum(len(s["functions"]) for s in struct.values()),
+                        "total_nodes": len(graph["nodes"]), "total_edges": len(graph["edges"]),
+                        "dead_code_summary": dc["summary"], "project_type": "python",
+                        "symbols": len(ug.symbols), "unified_edges": len(ug.edges)}}
+
+
+def run_analysis(files):
+    """Motor unificado por defecto; ante cualquier error inesperado vuelve al análisis histórico."""
+    if not _UNIFIED_OK or os.environ.get("FI_ENGINE", "unified").lower() == "legacy":
+        return run_analysis_legacy(files)
+    try:
+        return _run_analysis_unified(files)
+    except Exception:
+        _log.exception("motor unificado falló; usando análisis histórico")
+        out = run_analysis_legacy(files)
+        out["engine"] = "legacy-fallback"
+        return out
+
+
 # ═══════════════════════════════════════════════════════════
 # ENDPOINTS
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/health")
-def health(): return {"status": "healthy", "version": "3.0.0"}
+def health(): return {"status": "healthy", "version": "3.1.0", "engine": _engine_info()}
 
 class DumpPayload(BaseModel): content: str
 
@@ -612,6 +721,24 @@ async def analyze_zip(file: UploadFile = File(...), _auth=Depends(require_auth))
         return JSONResponse(content=run_analysis(fd))
     except HTTPException: raise
     except Exception as e: raise HTTPException(500, str(e))
+
+@app.post("/graph/unified")
+async def graph_unified(file: UploadFile = File(...), _auth=Depends(require_auth)):
+    """Grafo unificado COMPLETO (símbolos, aristas, confianza, archivo:línea) de un .zip de Python."""
+    if not _UNIFIED_OK:
+        raise HTTPException(501, "Motor unificado no disponible.")
+    try:
+        fd = {}
+        with zipfile.ZipFile(io.BytesIO(await file.read())) as zf:
+            for name in zf.namelist():
+                if name.endswith(".py") and not name.startswith("__"):
+                    fd[name.replace("\\", "/")] = zf.read(name).decode("utf-8", errors="replace")
+        if not fd: raise HTTPException(400, "El ZIP no contiene archivos .py.")
+        extractor = _py_ts.TreeSitterExtractor() if (_py_ts.available() and os.environ.get("FI_TREE_SITTER", "1") != "0") else None
+        enrichers = [_scip.make_enricher(_scip.run_scip(fd))] if _scip.enabled() else []
+        return JSONResponse(content=_UGB(fd, fallback_extractor=extractor, enrichers=enrichers).build().to_dict())
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(500, f"{type(e).__name__}: {e}")
 
 class TraceReq(BaseModel): filepath: str; analysis: dict
 

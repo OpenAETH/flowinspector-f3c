@@ -1,0 +1,7 @@
+# Dependencias OPCIONALES de Flow Inspector (el motor funciona sin ellas, con `ast`).
+# Instalar con:  pip install --only-binary=:all: -r requirements-optional.txt
+#
+# tree-sitter (MIT)          -> respaldo tolerante a errores de sintaxis para archivos que `ast` rechaza
+# tree-sitter-python (MIT)   -> gramática Python
+tree-sitter>=0.25,<0.27
+tree-sitter-python>=0.25,<0.26
