@@ -136,3 +136,8 @@ trazabilidad `archivo:línea` con nivel de confianza en cada arista. La UI y los
 ---
 
 build with 🧡 by [AETHERYON Systems](https://aetheryon.com)
+
+### Informes automáticos y modelos (3.1)
+
+`python -m Backend.report . --out informe.md --ai` · `GET /models` · `POST /report` · botón "▤ Informe" en la UI.
+Modelos con `FI_MODELS` (coma-separado). Detalle en `docs/UNIFIED_GRAPH.md`.

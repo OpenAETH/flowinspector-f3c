@@ -81,3 +81,30 @@ no payload ran, and `../` / absolute entries were not written.
 * Dynamic dispatch, `getattr`, decorators that rewrite callables and runtime-built classes are not resolved without SCIP's type inference.
 * The unified graph is Python-only; the HTML/CSS/JS analyzers are unchanged.
 * The UI file list shows only base names, so two `util.py` still look alike there (the path is in the tooltip).
+
+## Informes automáticos (3.1)
+
+`Backend/report/` genera un informe **determinista** (hechos con `archivo:línea`) y, opcionalmente, una narrativa IA encima.
+
+| Pieza | Qué hace |
+|---|---|
+| `builder.py` | Hallazgos con severidad y evidencia: ciclos de imports (Tarjan), código muerto probable, colisiones de nombres, funciones largas, acoplamiento (fan-in/out), símbolos más llamados, calidad de resolución de llamadas |
+| `diff.py` | Snapshot compacto por uid y diff entre corridas (símbolos añadidos/quitados/movidos, aristas, código muerto y ciclos nuevos/resueltos) |
+| `narrative.py` | Groq con reintentos (429/5xx), fallback entre modelos (404/retirado), reintento sin `response_format`, parser que quita `<think>`/fences y **descarta acciones que citen archivos inexistentes**. Si todo falla, el informe sale sin narrativa |
+| `config.py` | Modelos configurables: `FI_MODELS` (default `qwen/qwen3.8-27b,openai/gpt-oss-120b,openai/gpt-oss-20b`), `FI_MODEL_REPORT`, `FI_MODEL_CHAT`, `FI_MODEL_FAST` |
+| `__main__.py` | CLI para CI/cron |
+
+```
+python -m Backend.report REPO_O_ZIP --out informe.md [--format md|html|json] [--ai] [--model ID]
+       [--baseline snap.json] [--save-snapshot snap.json] [--fail-on medium]   # exit 2 si hay hallazgos >= nivel
+```
+
+API: `GET /models`, `POST /report` (zip; `?ai=true`; clave en header `x-groq-key` o `GROQ_API_KEY`), `POST /report/analysis` (JSON `{analysis, ai, api_key, model, baseline}`).
+UI: botón **▤ Informe** (descarga Markdown; guarda el snapshot en el navegador para mostrar cambios en la próxima descarga) y selector de modelos poblado desde `/models`.
+Automatización: `.github/workflows/flowinspector-report.yml` (semanal + en PRs, resumen en la pestaña del job, línea base por caché). `GROQ_API_KEY` es un secret opcional.
+
+## Gráfico (3.1)
+
+Layout con repulsión Barnes-Hut y enfriamiento (se detiene solo), halos por archivo, HiDPI, etiquetas por nivel de detalle sin solapes,
+aristas por confianza (punteadas = ambiguas/baja), anillos de código muerto, foco por vecindad (`F`: 1→2→todo), búsqueda (`/`, Enter siguiente),
+minimapa, pinch-zoom, exportar PNG. Misma API pública (`Graph.init`, `setView`, `highlightFile`, ...).

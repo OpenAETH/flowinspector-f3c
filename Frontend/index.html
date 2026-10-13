@@ -91,7 +91,15 @@ body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);font
 #graph-controls{position:absolute;bottom:12px;right:12px;display:none;flex-direction:column;gap:4px;z-index:10}
 .graph-btn{width:28px;height:28px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);border-radius:5px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .12s}
 .graph-btn:hover{background:var(--panel);border-color:var(--accent);color:var(--accent)}
-#graph-legend{position:absolute;top:12px;left:12px;z-index:10;background:rgba(13,15,20,.85);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:10px;display:none}
+#graph-search-box{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:11;display:none;align-items:center;gap:6px;background:rgba(13,15,20,.88);border:1px solid var(--border2);border-radius:6px;padding:4px 8px}
+#graph-search{background:transparent;border:0;outline:0;color:var(--text);font-size:12px;width:210px}
+#graph-search-count{font-size:10px;color:var(--dim);min-width:26px;text-align:right}
+#graph-minimap{position:absolute;left:12px;bottom:12px;width:150px;height:100px;z-index:10;background:rgba(13,15,20,.85);border:1px solid var(--border2);border-radius:6px;cursor:pointer;touch-action:none}
+.legend-sep{height:1px;background:var(--border);margin:5px 0}
+.legend-line{display:inline-block;width:16px;margin-right:6px;vertical-align:middle}
+.legend-dot.ring{background:transparent!important;border:2px solid}
+@media(max-width:700px){#graph-minimap{display:none!important}#graph-search{width:120px}}
+#graph-legend{position:absolute;bottom:122px;left:12px;z-index:10;background:rgba(13,15,20,.85);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:10px;display:none}
 .legend-row{display:flex;align-items:center;gap:6px;margin:2px 0}
 .legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 
@@ -916,6 +924,7 @@ body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);font
     <div class="top-sep"></div>
     <button class="btn" onclick="UI.showUpload()">⊕ Nuevo análisis</button>
     <button class="btn" id="btn-export" onclick="UI.exportJSON()" style="display:none">⬇ Exportar JSON</button>
+    <button class="btn" id="btn-report" onclick="UI.exportReport()" style="display:none" title="Informe automático (Markdown); con clave Groq agrega resumen IA">▤ Informe</button>
     <div class="top-sep"></div>
     <button class="btn" onclick="Graph.relayout()">⟳ Re-layout</button>
     <button class="btn ai-btn" onclick="UI.switchTab('ai')" id="btn-ai" style="display:none">◆ Change Impact</button>
@@ -1027,13 +1036,26 @@ body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);font
             <div class="legend-row"><div class="legend-dot" style="background:var(--n-class)"></div>Clase</div>
             <div class="legend-row"><div class="legend-dot" style="background:var(--n-fn)"></div>Función</div>
             <div class="legend-row"><div class="legend-dot" style="background:var(--n-mod)"></div>Módulo</div>
+            <div class="legend-sep"></div>
+            <div class="legend-row"><span class="legend-line" style="border-top:2px solid #10b981"></span>Llamada resuelta</div>
+            <div class="legend-row"><span class="legend-line" style="border-top:2px dashed #10b981"></span>Ambigua / baja confianza</div>
+            <div class="legend-row"><span class="legend-line" style="border-top:2px solid #3b82f6"></span>Import</div>
+            <div class="legend-row"><div class="legend-dot ring" style="border-color:#ef4444"></div>Código muerto</div>
           </div>
+          <div id="graph-search-box">
+            <input id="graph-search" type="search" placeholder="Buscar símbolo o archivo ( / )" autocomplete="off"
+                   oninput="Graph.search(this.value)" onkeydown="if(event.key==='Enter'){Graph.searchNext();event.preventDefault()}if(event.key==='Escape'){this.value='';Graph.search('');this.blur()}"/>
+            <span id="graph-search-count"></span>
+          </div>
+          <canvas id="graph-minimap" width="150" height="100" style="display:none"></canvas>
           <div id="mini-timeline"><div id="mt-track"></div><div id="mt-cursor" style="left:0%"></div><div id="mt-tooltip"></div></div>
           <div id="graph-controls">
             <button class="graph-btn" onclick="Graph.zoomIn()" title="Zoom in">+</button>
             <button class="graph-btn" onclick="Graph.zoomOut()" title="Zoom out">−</button>
             <button class="graph-btn" onclick="Graph.fitView()" title="Fit view">⊡</button>
             <button class="graph-btn" onclick="Graph.togglePhysics()" title="Toggle physics" id="btn-physics">⚡</button>
+            <button class="graph-btn" onclick="Graph.cycleFocus()" title="Foco en vecindad (F)" id="btn-focus">◎</button>
+            <button class="graph-btn" onclick="Graph.exportPNG()" title="Exportar PNG" id="btn-export">⤓</button>
           </div>
         </div>
       </div>
@@ -1165,11 +1187,7 @@ body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text);font
                      oninput="AI.onKeyChange(this.value)"/>
               <span class="ai-key-status unset" id="key-status">Sin key</span>
               <select class="ai-model-select" id="groq-model">
-                <option value="llama-3.3-70b-versatile">Llama 3.3 70B</option>
-                <option value="llama3-70b-8192">Llama 3 70B</option>
-                <option value="llama3-8b-8192">Llama 3 8B (rápido)</option>
-                <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-                <option value="gemma2-9b-it">Gemma 2 9B</option>
+                <option value="">Cargando modelos…</option>
               </select>
             </div>
             <textarea id="ai-query" placeholder="Describí el cambio que querés hacer…&#10;Ej: Quiero agregar paginación al endpoint /analyze/upload"></textarea>
@@ -1463,6 +1481,8 @@ const UI = {
     $('upload-zone').style.display    = 'flex';
     $('graph-canvas').style.display   = 'none';
     $('graph-legend').style.display   = 'none';
+    $('graph-search-box').style.display = 'none';
+    { const mm=$('graph-minimap'); if(mm) mm.style.display='none'; }
     $('graph-controls').style.display = 'none';
     $('graph-filter-bar').classList.remove('show');
     $('runtime-bar').classList.remove('show');
@@ -1475,6 +1495,7 @@ const UI = {
     $('detail-body').innerHTML = '<div class="empty">Seleccioná un nodo o archivo.</div>';
     $('detail-title').textContent = 'Detalle';
     $('btn-export').style.display  = 'none';
+    $('btn-report').style.display  = 'none';
     $('btn-ai').style.display      = 'none';
     $('file-input').value  = '';
     try { $('folder-input').value = ''; } catch(_) {}
@@ -1618,6 +1639,7 @@ const UI = {
     const pt = data.project_type === 'web' ? '🌐 Web' : '🐍 Python';
     UI.setStatus(`${pt} · ${s.total_files} archivos · ${s.total_nodes} nodos`, 'ok');
     $('btn-export').style.display = '';
+    $('btn-report').style.display = '';
     $('btn-ai').style.display = '';
     UI.renderFileList(data.files);
     if (data.project_type === 'web') {
@@ -1634,6 +1656,7 @@ const UI = {
     $('upload-zone').style.display    = 'none';
     $('graph-canvas').style.display   = 'block';
     $('graph-legend').style.display   = 'block';
+    $('graph-search-box').style.display = 'flex';
     $('graph-controls').style.display = 'flex';
     $('graph-filter-bar').classList.add('show');
     AI.onAnalysisReady(data);
@@ -1930,6 +1953,38 @@ const UI = {
     }
   },
 
+  async exportReport() {
+    if (!State.analysis) return;
+    const key = ($('groq-key') && $('groq-key').value.trim()) || '';
+    const ai = key.startsWith('gsk_');
+    const btn = $('btn-report'), old = btn.textContent; btn.disabled = true; btn.textContent = ai ? '… generando (IA)' : '… generando';
+    try {
+      let baseline = null;
+      try { baseline = JSON.parse(localStorage.getItem('fi_last_snapshot') || 'null'); } catch(e) {}
+      const r = await fetch(`${API}/report/analysis`, { method:'POST', headers:{ 'Content-Type':'application/json', ...Auth.headers() },
+        body: JSON.stringify({ analysis: State.analysis, ai, api_key: ai ? key : '', model: $('groq-model') ? $('groq-model').value : '', baseline }) });
+      if (!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || `HTTP ${r.status}`);
+      const j = await r.json();
+      try { localStorage.setItem('fi_last_snapshot', JSON.stringify(j.snapshot)); } catch(e) {}
+      const blob = new Blob([j.markdown], { type:'text/markdown' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'flowinspector_informe.md'; a.click();
+      if (ai && !j.narrative) alert('El informe se generó sin resumen IA (todos los modelos fallaron). Detalle: ' + JSON.stringify(j.ai_attempts));
+    } catch (e) { alert('No se pudo generar el informe: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = old; }
+  },
+
+  async loadModels() {
+    const sel = $('groq-model'); if (!sel) return;
+    try {
+      const r = await fetch(`${API}/models`); if (!r.ok) throw 0;
+      const m = await r.json();
+      sel.innerHTML = m.models.map(x => `<option value="${x.id}">${x.id}</option>`).join('');
+      if (m.roles && m.roles.chat) sel.value = m.roles.chat;
+    } catch (e) {
+      sel.innerHTML = ['qwen/qwen3.8-27b','openai/gpt-oss-120b','openai/gpt-oss-20b'].map(x => `<option value="${x}">${x}</option>`).join('');
+    }
+  },
+
   exportJSON() {
     if (!State.analysis) return;
     const blob = new Blob([JSON.stringify(State.analysis,null,2)],{type:'application/json'});
@@ -2130,256 +2185,672 @@ const Graph = {
       visEdges = visEdges.filter(e => visNodes.has(e.from) && visNodes.has(e.to));
     }
 
+    if (this.focusHops > 0 && sel && visNodes.has(sel)) {
+      const keep = new Set([sel]);
+      for (let h = 0; h < this.focusHops; h++) {
+        const cur = new Set(keep);
+        visEdges.forEach(e => {
+          if (cur.has(e.from) && !keep.has(e.to)) keep.add(e.to);
+          else if (cur.has(e.to) && !keep.has(e.from)) keep.add(e.from);
+        });
+      }
+      visNodes = new Set([...visNodes].filter(id => keep.has(id)));
+      visEdges = visEdges.filter(e => visNodes.has(e.from) && visNodes.has(e.to));
+    }
+
+    const _prevN = this._visNodes ? this._visNodes.size : -1;
+    this._simIds = null;
     this._visNodes = visNodes;
     this._visEdges = visEdges;
+    if (_prevN !== visNodes.size && this._reheat) this._reheat(0.3);
   },
 
+  // ══════════════ v3.1 graph engine ══════════════
+  // Layout por carpeta/archivo, repulsión Barnes-Hut con enfriamiento (la simulación se detiene sola),
+  // render HiDPI con niveles de detalle, estilos por confianza de arista, anillos de dead code,
+  // foco por vecindad, búsqueda, minimapa y pinch-zoom. Misma API pública que la versión anterior.
+  _TYPE: { file:{color:'#60a5fa',r:8}, class:{color:'#a78bfa',r:6}, function:{color:'#34d399',r:4.2}, module:{color:'#6b7280',r:4}, external:{color:'#4b5563',r:3.2} },
+  _ESTYLE: { IMPORTS:['59,130,246',.34], FILE_USES:['96,165,250',.22], DEFINES:['139,92,246',.10], CALLS:['16,185,129',.40] },
+
   init(graphData) {
-    this.canvas = $('graph-canvas');
-    this.ctx    = this.canvas.getContext('2d');
-    this.nodes  = graphData.nodes;
-    this.edges  = graphData.edges;
-    // Reset filter state
+    this.nodes = graphData.nodes;
+    this.edges = graphData.edges;
     this.view = 'all';
     this.nodeFilters = { file:true, class:true, function:true, module:true };
     this.edgeFilters = { IMPORTS:true, DEFINES:true, CALLS:true };
     this.flowFilters = { upstream:true, downstream:true };
-    // Reset UI toggles
-    ['fc-file','fc-class','fc-function','fc-module',
-     'fe-IMPORTS','fe-DEFINES','fe-CALLS','fc-upstream','fc-downstream']
+    this.focusHops = 0; this.selectedNode = null; this.hlFile = null;
+    this._hover = null; this._query = ''; this._matches = []; this._matchIdx = 0;
+    this._anim = null; this._alpha = 0; this._sigLast = ''; this._pointers = new Map();
+    ['fc-file','fc-class','fc-function','fc-module','fe-IMPORTS','fe-DEFINES','fe-CALLS','fc-upstream','fc-downstream']
       .forEach(id => { const el=$(id); if(el) el.classList.add('on'); });
-    document.querySelectorAll('.view-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.view === 'all'));
-    this._applyFilters();
-    this._resize();
-    window.addEventListener('resize', () => this._resize());
-    this.relayout();
-    const c = this.canvas, nc = c.cloneNode(true);
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === 'all'));
+    const fb = $('btn-focus'); if (fb) fb.style.color = '';
+    const si = $('graph-search'); if (si) si.value = '';
+    const sc = $('graph-search-count'); if (sc) sc.textContent = '';
+
+    // canvas nuevo para descartar listeners de análisis anteriores
+    const c = $('graph-canvas'), nc = c.cloneNode(true);
     c.parentNode.replaceChild(nc, c);
     this.canvas = nc; this.ctx = nc.getContext('2d');
-    nc.addEventListener('mousedown', e => this._onDown(e));
-    nc.addEventListener('mousemove', e => this._onMove(e));
-    nc.addEventListener('mouseup',   ()  => this._onUp());
-    nc.addEventListener('mouseleave',()  => { this._onUp(); Tooltip.hide(0); });
-    nc.addEventListener('wheel',     e => this._onWheel(e), {passive:false});
-    nc.addEventListener('dblclick',  e => this._onDbl(e));
+    this._prepare();
+    this._applyFilters();
+    this._resize();
+    this.relayout();
+    nc.addEventListener('pointerdown',  e => this._pDown(e));
+    nc.addEventListener('pointermove',  e => this._pMove(e));
+    nc.addEventListener('pointerup',    e => this._pUp(e));
+    nc.addEventListener('pointercancel',e => this._pUp(e));
+    nc.addEventListener('pointerleave', () => { if (!this._pointers.size) { this._hover = null; Tooltip.hide(0); } });
+    nc.addEventListener('wheel',        e => this._onWheel(e), {passive:false});
+    nc.addEventListener('dblclick',     e => this._onDbl(e));
+    if (!this._globalBound) {
+      this._globalBound = true;
+      window.addEventListener('resize', () => this._resize());
+      document.addEventListener('keydown', e => this._onKey(e));
+    }
+    const mm = $('graph-minimap');
+    if (mm) {
+      mm.style.display = 'block';
+      mm.onpointerdown = e => this._miniPan(e);
+      mm.onpointermove = e => { if (e.buttons) this._miniPan(e); };
+    }
     if (this.animFrame) cancelAnimationFrame(this.animFrame);
     this._loop();
   },
 
-  _resize() {
-    const wrap = $('graph-wrap');
-    const bar  = $('graph-filter-bar');
-    if (this.canvas && wrap) {
-      const barH = bar && bar.classList.contains('show') ? bar.offsetHeight : 0;
-      this.canvas.width  = wrap.clientWidth;
-      this.canvas.height = wrap.clientHeight - barH;
+  // ── Preparación: dueño (archivo), grado, adyacencia, dead code ──
+  _prepare() {
+    const nodes = this.nodes, owner = {}, deg = {}, adj = {};
+    Object.entries(nodes).forEach(([id, n]) => {
+      deg[id] = 0; adj[id] = [];
+      if (n.type === 'file') owner[id] = id;
+      else if (n.path) owner[id] = `file:${n.path}`;
+    });
+    for (let pass = 0; pass < 3; pass++) {
+      this.edges.forEach(e => { if (e.relation === 'DEFINES' && owner[e.from] && !owner[e.to] && nodes[e.to]) owner[e.to] = owner[e.from]; });
     }
+    this.edges.forEach(e => {
+      if (!nodes[e.from] || !nodes[e.to]) return;
+      deg[e.from]++; deg[e.to]++; adj[e.from].push(e); adj[e.to].push(e);
+    });
+    this._owner = owner; this._deg = deg; this._adj = adj;
+    this._rad = {};
+    Object.entries(nodes).forEach(([id, n]) => {
+      const t = this._TYPE[n.type] || this._TYPE.module;
+      this._rad[id] = t.r + Math.min(7, Math.sqrt(deg[id]) * 0.9);
+    });
+    // dead code por nodo (path + nombre)
+    this._dead = {};
+    const items = State.analysis?.dead_code?.items || {};
+    Object.entries(nodes).forEach(([id, n]) => {
+      if (n.type !== 'function') return;
+      const path = n.path || (owner[id] && nodes[owner[id]]?.path);
+      const list = path && items[path]; if (!list) return;
+      const name = n.class ? `${n.class}.${n.short_name}` : String(n.label || '').replace(/ \([^)]*\)$/, '');
+      const it = list.find(d => d.name === name);
+      if (it && it.score > 0) this._dead[id] = it.score;
+    });
   },
 
-  relayout() {
-    const ids = Object.keys(this.nodes);
-    const cx = (this.canvas?.width||800)/2, cy = (this.canvas?.height||600)/2;
-    const r  = Math.min(cx,cy)*0.7;
-    this.pos = {};
-    ids.forEach((id,i) => {
-      const a = (2*Math.PI*i)/ids.length;
-      this.pos[id] = { x: cx+r*Math.cos(a)+(Math.random()-.5)*60, y: cy+r*Math.sin(a)+(Math.random()-.5)*60, vx:0, vy:0 };
-    });
-    this.scale=1; this.ox=0; this.oy=0;
+  _resize() {
+    const wrap = $('graph-wrap'), bar = $('graph-filter-bar');
+    if (!this.canvas || !wrap) return;
+    const barH = bar && bar.classList.contains('show') ? bar.offsetHeight : 0;
+    const w = Math.max(200, wrap.clientWidth), h = Math.max(160, wrap.clientHeight - barH);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this._DPR = dpr; this._W = w; this._H = h;
+    this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(h * dpr);
+    const mm = $('graph-minimap');
+    if (mm) { mm.width = Math.round(150 * dpr); mm.height = Math.round(100 * dpr); }
+    this._sigLast = '';
   },
+
+  // ── Layout inicial: territorios por carpeta, miembros alrededor de su archivo ──
+  relayout() {
+    const ids = Object.keys(this.nodes), W = this._W || 800, H = this._H || 600;
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    const files = ids.filter(id => this.nodes[id].type === 'file');
+    const dirOf = id => { const p = this.nodes[id].path || ''; const i = p.lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+    const groups = new Map();
+    files.forEach(f => { const d = dirOf(f); if (!groups.has(d)) groups.set(d, []); groups.get(d).push(f); });
+    const dirs = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+    const pos = {}, home = {}, members = {};
+    ids.forEach(id => { const o = this._owner[id]; if (o && o !== id) (members[o] = members[o] || []).push(id); });
+    let maxR = 0;
+    dirs.forEach(([d, fs], gi) => {
+      const tr = gi === 0 ? 0 : 150 * Math.sqrt(gi) , ta = gi * golden * 1.0;
+      const cx = W / 2 + tr * Math.cos(ta), cy = H / 2 + tr * Math.sin(ta);
+      fs.sort().forEach((f, i) => {
+        const ring = fs.length === 1 ? 0 : 55 + 18 * Math.sqrt(fs.length);
+        const a = (2 * Math.PI * i) / fs.length + gi;
+        const fx = cx + ring * Math.cos(a), fy = cy + ring * Math.sin(a);
+        pos[f] = { x: fx, y: fy, vx: 0, vy: 0 };
+        home[f] = { x: fx, y: fy };
+        const ms = members[f] || [];
+        ms.forEach((m, j) => {
+          const mr = 26 + 7 * Math.sqrt(j + 1), ma = j * golden;
+          pos[m] = { x: fx + mr * Math.cos(ma), y: fy + mr * Math.sin(ma), vx: 0, vy: 0 };
+        });
+        maxR = Math.max(maxR, Math.hypot(fx - W / 2, fy - H / 2) + 60);
+      });
+    });
+    // módulos / externos: hacia afuera, cerca del centroide de quienes los importan
+    const rest = ids.filter(id => !pos[id]);
+    rest.forEach((id, i) => {
+      const nb = (this._adj[id] || []).map(e => pos[e.from === id ? e.to : e.from]).filter(Boolean);
+      let ax, ay;
+      if (nb.length) { ax = nb.reduce((s, p) => s + p.x, 0) / nb.length; ay = nb.reduce((s, p) => s + p.y, 0) / nb.length; }
+      else { ax = W / 2; ay = H / 2; }
+      let dx = ax - W / 2, dy = ay - H / 2, d = Math.hypot(dx, dy);
+      if (d < 1) { const a = i * golden; dx = Math.cos(a); dy = Math.sin(a); d = 1; }
+      const push = Math.max(90, 90 + (maxR - d) * 0.5);
+      pos[id] = { x: ax + dx / d * push + (i % 7 - 3) * 6, y: ay + dy / d * push + (i % 5 - 2) * 6, vx: 0, vy: 0 };
+    });
+    this.pos = pos; this._home = home; this._simIds = null;
+    this.scale = 1; this.ox = 0; this.oy = 0;
+    this._alpha = 1;
+    const n = ids.length, pre = n > 3000 ? 40 : n > 1200 ? 90 : 160;
+    for (let i = 0; i < pre; i++) this._simulate(true);
+    this._alpha = Math.max(this._alpha, 0.12);
+    this.fitView(true);
+  },
+
+  _reheat(a = 0.35) { this._alpha = Math.max(this._alpha || 0, a); },
 
   _loop() {
     const tick = () => {
-      if (this.physicsOn) this._simulate();
-      this._draw();
+      let moving = false;
+      if (this.physicsOn || this.dragging) moving = this._simulate(false);
+      if (this._stepAnim()) moving = true;
+      const sig = this._sig();
+      if (moving || this._needsRedraw || sig !== this._sigLast) {
+        this._sigLast = sig; this._needsRedraw = false;
+        this._draw(); this._drawMini();
+      }
       this.animFrame = requestAnimationFrame(tick);
     };
     tick();
   },
 
-  _simulate() {
+  _sig() {
+    const rt = this._rtActiveNodes;
+    return [this.selectedNode, this._hover, this.hlFile, this.scale.toFixed(3), this.ox | 0, this.oy | 0, this._query,
+      rt ? rt.size : 0, HeatMap._enabled ? Object.keys(HeatMap._heat).length : -1,
+      this._visNodes ? this._visNodes.size : 0, this._visEdges ? this._visEdges.length : 0, this.focusHops, this._W, this._H].join('|');
+  },
+
+  // ── Simulación (Barnes-Hut + enlaces + colisión + gravedad de carpeta) ──
+  _simulate(force) {
+    if (!force && this._alpha < 0.004) return false;
     const vis = this._visNodes;
-    const ids = vis ? [...vis].filter(id => this.pos[id]) : Object.keys(this.pos);
-    const k=150, damp=0.85;
-    for (let i=0;i<ids.length;i++) for (let j=i+1;j<ids.length;j++) {
-      const a=this.pos[ids[i]], b=this.pos[ids[j]];
-      if(!a||!b) continue;
-      const dx=b.x-a.x, dy=b.y-a.y, d=Math.sqrt(dx*dx+dy*dy)||1;
-      const f=(k*k)/(d*d)*0.3, fx=dx/d*f, fy=dy/d*f;
-      a.vx-=fx; a.vy-=fy; b.vx+=fx; b.vy+=fy;
+    if (!this._simIds) this._simIds = vis ? [...vis].filter(id => this.pos[id]) : Object.keys(this.pos);
+    const ids = this._simIds, a = this._alpha, pos = this.pos;
+    const W = this._W || 800, H = this._H || 600;
+    // 1) repulsión Barnes-Hut
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const id of ids) { const p = pos[id]; if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.y < miny) miny = p.y; if (p.y > maxy) maxy = p.y; }
+    const size = Math.max(maxx - minx, maxy - miny, 1) + 2;
+    const root = { x: minx - 1, y: miny - 1, s: size, cx: 0, cy: 0, m: 0, ch: null, id: null };
+    for (const id of ids) this._qtInsert(root, id, pos[id].x, pos[id].y, 0);
+    const K = 150, theta2 = 0.81, acc = { fx: 0, fy: 0 };
+    for (const id of ids) {
+      const p = pos[id]; acc.fx = 0; acc.fy = 0;
+      this._qtForce(root, id, p.x, p.y, K * a, theta2, acc);
+      p.vx += acc.fx; p.vy += acc.fy;
     }
-    const activeEdges = this._visEdges || this.edges;
-    activeEdges.forEach(e => {
-      const a=this.pos[e.from], b=this.pos[e.to]; if(!a||!b) return;
-      const dx=b.x-a.x, dy=b.y-a.y, d=Math.sqrt(dx*dx+dy*dy)||1, f=(d-k)*0.02;
-      a.vx+=dx/d*f; a.vy+=dy/d*f; b.vx-=dx/d*f; b.vy-=dy/d*f;
-    });
-    const cx=this.canvas.width/2, cy=this.canvas.height/2;
-    ids.forEach(id => {
-      const p=this.pos[id]; if(!p) return;
-      p.vx+=(cx-p.x)*0.002; p.vy+=(cy-p.y)*0.002;
-      p.vx*=damp; p.vy*=damp;
-      if(this.dragging!==id){p.x+=p.vx; p.y+=p.vy;}
-    });
+    // 2) enlaces
+    const edges = this._visEdges || this.edges;
+    for (const e of edges) {
+      const p = pos[e.from], q = pos[e.to]; if (!p || !q) continue;
+      let L, S;
+      if (e.relation === 'DEFINES') { L = 30 + (this._rad[e.from] || 6); S = 0.30; }
+      else if (e.relation === 'CALLS') { L = 95; S = e.confidence === 'low' ? 0.025 : 0.05; }
+      else { L = 160; S = 0.03; }
+      const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1;
+      const f = (d - L) / d * S * a, fx = dx * f, fy = dy * f;
+      p.vx += fx; p.vy += fy; q.vx -= fx; q.vy -= fy;
+    }
+    // 3) gravedad de carpeta/archivo + centro
+    for (const id of ids) {
+      const p = pos[id], h = this._home && this._home[id];
+      if (h) { p.vx += (h.x - p.x) * 0.035 * a; p.vy += (h.y - p.y) * 0.035 * a; }
+      else {
+        const o = this._owner[id], op = o && pos[o];
+        if (op) { p.vx += (op.x - p.x) * 0.025 * a; p.vy += (op.y - p.y) * 0.025 * a; }
+      }
+      p.vx += (W / 2 - p.x) * 0.004 * a; p.vy += (H / 2 - p.y) * 0.004 * a;
+    }
+    // 4) colisión por rejilla
+    const cell = 36, grid = new Map();
+    for (const id of ids) {
+      const p = pos[id], key = ((p.x / cell) | 0) + ',' + ((p.y / cell) | 0);
+      let b = grid.get(key); if (!b) grid.set(key, b = []); b.push(id);
+    }
+    for (const id of ids) {
+      const p = pos[id], gx = (p.x / cell) | 0, gy = (p.y / cell) | 0, ri = this._rad[id] || 5;
+      for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+        const b = grid.get((gx + ox) + ',' + (gy + oy)); if (!b) continue;
+        for (const jd of b) {
+          if (jd <= id) continue;
+          const q = pos[jd], min = ri + (this._rad[jd] || 5) + 6;
+          let dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy;
+          if (d2 >= min * min) continue;
+          if (d2 < 0.01) { dx = (Math.random() - .5); dy = (Math.random() - .5); d2 = dx * dx + dy * dy + 0.01; }
+          const d = Math.sqrt(d2), push = (min - d) / d * 0.5 * Math.max(a, 0.15);
+          p.vx -= dx * push; p.vy -= dy * push; q.vx += dx * push; q.vy += dy * push;
+        }
+      }
+    }
+    // 5) integración
+    for (const id of ids) {
+      const p = pos[id];
+      p.vx *= 0.6; p.vy *= 0.6;
+      if (this.dragging === id) { p.vx = 0; p.vy = 0; continue; }
+      p.x += Math.max(-40, Math.min(40, p.vx)); p.y += Math.max(-40, Math.min(40, p.vy));
+    }
+    this._alpha += (this.dragging ? 0.3 - this._alpha : -this._alpha) * 0.0228;
+    if (this.dragging && this._alpha < 0.3) this._alpha = 0.3;
+    return true;
+  },
+
+  _qtInsert(node, id, x, y, depth) {
+    if (node.m === 0 && !node.ch) { node.id = id; node.cx = x; node.cy = y; node.m = 1; return; }
+    if (!node.ch) {
+      if (depth >= 14) { node.m++; return; }
+      const old = node.id, ox = node.cx, oy = node.cy;
+      node.ch = [null, null, null, null]; node.id = null;
+      this._qtChild(node, old, ox, oy, depth);
+      node.m = 1; node.cx = ox; node.cy = oy;
+    }
+    node.cx = (node.cx * node.m + x) / (node.m + 1); node.cy = (node.cy * node.m + y) / (node.m + 1); node.m++;
+    this._qtChild(node, id, x, y, depth);
+  },
+  _qtChild(node, id, x, y, depth) {
+    const hs = node.s / 2, q = (x >= node.x + hs ? 1 : 0) + (y >= node.y + hs ? 2 : 0);
+    let c = node.ch[q];
+    if (!c) c = node.ch[q] = { x: node.x + (q & 1 ? hs : 0), y: node.y + (q & 2 ? hs : 0), s: hs, cx: 0, cy: 0, m: 0, ch: null, id: null };
+    this._qtInsert(c, id, x, y, depth + 1);
+  },
+  _qtForce(node, id, x, y, k, theta2, acc) {
+    if (!node || node.m === 0) return;
+    let dx = node.cx - x, dy = node.cy - y, d2 = dx * dx + dy * dy;
+    if (!node.ch) {
+      if (node.id === id) return;
+      if (d2 < 1) { dx = (Math.random() - .5); dy = (Math.random() - .5); d2 = 1; }
+      const w = k * node.m / Math.max(d2, 100);
+      acc.fx -= dx * w; acc.fy -= dy * w; return;
+    }
+    if (node.s * node.s < theta2 * d2) {
+      const w = k * node.m / Math.max(d2, 100);
+      acc.fx -= dx * w; acc.fy -= dy * w; return;
+    }
+    for (let i = 0; i < 4; i++) if (node.ch[i]) this._qtForce(node.ch[i], id, x, y, k, theta2, acc);
+  },
+
+  // ── Vista: animación, fit, centrar ──
+  _goto(ox, oy, scale, instant) {
+    scale = Math.max(0.05, Math.min(8, scale));
+    if (instant) { this.ox = ox; this.oy = oy; this.scale = scale; this._anim = null; return; }
+    this._anim = { f: { ox: this.ox, oy: this.oy, s: this.scale }, t: { ox, oy, s: scale }, k: 0 };
+  },
+  _stepAnim() {
+    const A = this._anim; if (!A) return false;
+    A.k = Math.min(1, A.k + 0.08);
+    const e = 1 - Math.pow(1 - A.k, 3);
+    this.ox = A.f.ox + (A.t.ox - A.f.ox) * e; this.oy = A.f.oy + (A.t.oy - A.f.oy) * e;
+    this.scale = A.f.s + (A.t.s - A.f.s) * e;
+    if (A.k >= 1) this._anim = null;
+    return true;
+  },
+  _bounds(onlyVisible = true) {
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const [id, p] of Object.entries(this.pos)) {
+      if (onlyVisible && this._visNodes && !this._visNodes.has(id)) continue;
+      if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.y < miny) miny = p.y; if (p.y > maxy) maxy = p.y;
+    }
+    return isFinite(minx) ? { minx, miny, maxx, maxy } : null;
+  },
+  fitView(instant) {
+    const b = this._bounds(); if (!b) return;
+    const pad = 70, W = this._W || 800, H = this._H || 600;
+    const s = Math.min((W - pad * 2) / ((b.maxx - b.minx) || 1), (H - pad * 2) / ((b.maxy - b.miny) || 1), 2.5);
+    const cx = (b.minx + b.maxx) / 2, cy = (b.miny + b.maxy) / 2;
+    this._goto(W / 2 - cx * s, H / 2 - cy * s, s, instant === true);
+  },
+  centerOn(id, scale) {
+    const p = this.pos[id]; if (!p) return;
+    const s = Math.max(this.scale, scale || 1.4), W = this._W || 800, H = this._H || 600;
+    this._goto(W / 2 - p.x * s, H / 2 - p.y * s, s, false);
+  },
+  zoomIn()  { this._zoomAt((this._W || 800) / 2, (this._H || 600) / 2, 1.25); },
+  zoomOut() { this._zoomAt((this._W || 800) / 2, (this._H || 600) / 2, 0.8); },
+  _zoomAt(sx, sy, f) {
+    const s = Math.max(0.05, Math.min(8, this.scale * f)), k = s / this.scale;
+    this.ox = sx - (sx - this.ox) * k; this.oy = sy - (sy - this.oy) * k; this.scale = s; this._anim = null;
+  },
+
+  // ── Dibujo ──
+  _sr(id) {   // radio en unidades de mundo (crece suavemente con el zoom)
+    return this._rad[id] * Math.min(2.2, Math.max(0.7, Math.sqrt(this.scale))) / this.scale;
+  },
+
+  _litSet() {
+    const focus = this.selectedNode || this._hover;
+    let lit = null;
+    if (focus && this.nodes[focus]) {
+      lit = new Set([focus]);
+      (this._adj[focus] || []).forEach(e => { lit.add(e.from); lit.add(e.to); });
+    } else if (this._query && this._matches.length) {
+      lit = new Set(this._matches);
+    } else if (this.hlFile) {
+      lit = new Set();
+      const fid = `file:${this.hlFile}`;
+      Object.keys(this.nodes).forEach(id => { if (id === fid || this._owner[id] === fid) lit.add(id); });
+    }
+    return lit;
   },
 
   _draw() {
-    const ctx=this.ctx; if(!ctx) return;
-    ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
-    ctx.save(); ctx.translate(this.ox,this.oy); ctx.scale(this.scale,this.scale);
-    const hl=this.hlFile, sel=this.selectedNode;
-    const vis    = this._visNodes;
-    const visEdg = this._visEdges || this.edges;
+    const ctx = this.ctx; if (!ctx || !this._W) return;
+    const dpr = this._DPR, W = this._W, H = this._H, sc = this.scale, inv = 1 / sc;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.save(); ctx.translate(this.ox, this.oy); ctx.scale(sc, sc);
+    const vis = this._visNodes, edges = this._visEdges || this.edges, pos = this.pos;
+    const sel = this.selectedNode, hov = this._hover, lit = this._litSet();
+    const x0 = -this.ox * inv - 60, y0 = -this.oy * inv - 60, x1 = (W - this.ox) * inv + 60, y1 = (H - this.oy) * inv + 60;
+    const onScreen = p => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1;
 
-    const ECOL = {
-      IMPORTS: { color:'#3b82f6', alpha:0.25 },
-      DEFINES: { color:'#8b5cf6', alpha:0.25 },
-      CALLS:   { color:'#10b981', alpha:0.3  },
-    };
-
-    // Draw edges with direction arrows
-    visEdg.forEach(e => {
-      const a=this.pos[e.from], b=this.pos[e.to]; if(!a||!b) return;
-      const ec = ECOL[e.relation] || { color:'#6b7280', alpha:0.2 };
-      const isFlowUp   = sel && e.to   === sel;
-      const isFlowDown = sel && e.from === sel;
-      const emphasis   = isFlowUp || isFlowDown;
-      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
-      ctx.strokeStyle = emphasis
-        ? (isFlowUp ? 'rgba(251,146,60,0.7)' : 'rgba(167,139,250,0.7)')
-        : `${ec.color}${Math.round(ec.alpha*255).toString(16).padStart(2,'0')}`;
-      ctx.lineWidth = emphasis ? 1.5/this.scale : 1/this.scale;
-      ctx.stroke();
-
-      // Arrow head on edges that are emphasized
-      if (emphasis && this.scale > 0.3) {
-        const dx=b.x-a.x, dy=b.y-a.y, len=Math.sqrt(dx*dx+dy*dy)||1;
-        const ux=dx/len, uy=dy/len;
-        const mx=a.x+dx*.55, my=a.y+dy*.55;
-        const aw=4/this.scale;
-        ctx.beginPath();
-        ctx.moveTo(mx+ux*aw, my+uy*aw);
-        ctx.lineTo(mx-uy*aw*0.7, my+ux*aw*0.7);
-        ctx.lineTo(mx+uy*aw*0.7, my-ux*aw*0.7);
-        ctx.closePath();
-        ctx.fillStyle = isFlowUp ? 'rgba(251,146,60,0.8)' : 'rgba(167,139,250,0.8)';
-        ctx.fill();
+    // halos de archivo (agrupan visualmente a sus miembros)
+    if (this.view !== 'files-only') {
+      const acc = {};
+      for (const [id, p] of Object.entries(pos)) {
+        if (vis && !vis.has(id)) continue;
+        const o = this._owner[id]; if (!o) continue;
+        const g = acc[o] || (acc[o] = { sx: 0, sy: 0, n: 0, pts: [] });
+        g.sx += p.x; g.sy += p.y; g.n++; g.pts.push(p);
       }
-    });
+      for (const [o, g] of Object.entries(acc)) {
+        if (g.n < 2) continue;
+        const cx = g.sx / g.n, cy = g.sy / g.n;
+        let r = 0; for (const p of g.pts) r = Math.max(r, Math.hypot(p.x - cx, p.y - cy));
+        r += 16;
+        if (cx + r < x0 || cx - r > x1 || cy + r < y0 || cy - r > y1) continue;
+        const dim = lit && !lit.has(o) ? 0.4 : 1;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(96,165,250,${0.045 * dim})`; ctx.fill();
+        ctx.strokeStyle = `rgba(96,165,250,${0.13 * dim})`; ctx.lineWidth = inv; ctx.stroke();
+      }
+    }
 
-    const TYPE={file:{color:'#60a5fa',r:9},class:{color:'#a78bfa',r:7},function:{color:'#34d399',r:5},module:{color:'#6b7280',r:5},external:{color:'#374151',r:4}};
-    Object.entries(this.pos).forEach(([id,p]) => {
-      const node=this.nodes[id]; if(!node) return;
-      if (vis && !vis.has(id)) return;  // respect filter
-      const {color,r}=TYPE[node.type]||TYPE.module;
-      const isSel=sel===id, isHl=hl&&(id===`file:${hl}`||id.includes(hl));
-      const alpha=(!hl&&!sel)?1:(isHl||isSel)?1:0.18;
-      const rad=r/this.scale*2;
-      ctx.globalAlpha=alpha;
-      if(isSel){
-        // Glow ring
-        ctx.beginPath(); ctx.arc(p.x,p.y,rad+4/this.scale,0,Math.PI*2);
-        ctx.strokeStyle=color+'66'; ctx.lineWidth=3/this.scale; ctx.stroke();
-        ctx.beginPath(); ctx.arc(p.x,p.y,rad+1.5/this.scale,0,Math.PI*2);
-        ctx.strokeStyle='#fff'; ctx.lineWidth=1.5/this.scale; ctx.stroke();
+    // aristas
+    const heavy = edges.length > 6000;
+    const dmul = edges.length > 1500 ? Math.max(0.3, Math.sqrt(1500 / edges.length)) : 1;
+    for (const e of edges) {
+      const a = pos[e.from], b = pos[e.to]; if (!a || !b) continue;
+      if (!onScreen(a) && !onScreen(b)) continue;
+      const emph = lit && lit.has(e.from) && lit.has(e.to) && (sel || hov) && (e.from === (sel || hov) || e.to === (sel || hov));
+      if (heavy && e.relation === 'DEFINES' && !emph && sc < 0.6) continue;
+      const st = this._ESTYLE[e.relation] || ['107,114,128', .2];
+      const uncertain = e.ambiguous || e.confidence === 'low';
+      let alpha = st[1] * (e.confidence === 'exact' ? 1.25 : e.confidence === 'medium' ? 0.9 : uncertain ? 0.75 : 1);
+      alpha *= dmul;
+      if (lit && !emph) alpha *= 0.12;
+      let col = `rgba(${st[0]},${Math.min(1, alpha)})`, w = (e.confidence === 'exact' ? 1.3 : 1) * inv;
+      if (emph) {
+        const up = e.to === (sel || hov);
+        col = up ? 'rgba(251,146,60,0.85)' : 'rgba(167,139,250,0.85)'; w = 1.6 * inv;
       }
-      ctx.beginPath(); ctx.arc(p.x,p.y,rad,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
-      if(this.scale>0.5&&(node.type==='file'||isSel||isHl)){
-        const fs=10/this.scale;
-        ctx.font=`${fs}px DM Mono`; ctx.fillStyle=alpha>=0.8?'#d4d8e8':'#3d4258';
-        ctx.textAlign='center'; ctx.fillText(node.label||id,p.x,p.y-rad-3/this.scale);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.setLineDash(uncertain && e.relation !== 'DEFINES' ? [5 * inv, 4 * inv] : []);
+      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke();
+      if (e.relation !== 'DEFINES' && (emph || (sc > 0.7 && !lit))) {
+        const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+        const tr = this._sr(e.to) + 2 * inv, tx = b.x - ux * tr, ty = b.y - uy * tr, aw = (emph ? 5 : 3.5) * inv;
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(tx, ty);
+        ctx.lineTo(tx - ux * aw * 1.6 - uy * aw * 0.7, ty - uy * aw * 1.6 + ux * aw * 0.7);
+        ctx.lineTo(tx - ux * aw * 1.6 + uy * aw * 0.7, ty - uy * aw * 1.6 - ux * aw * 0.7);
+        ctx.closePath(); ctx.fillStyle = col; ctx.fill();
       }
-    });
-    
-    // Runtime Overlay
-    if (this._rtActiveNodes?.size) {
-      for (const [id, p] of Object.entries(this.pos)) {
-        if (!this._rtActiveNodes.has(id)) continue;
-        const node = this.nodes[id]; if (!node) continue;
-        const r = (node.type==='file'?9:6)/this.scale*2 + 6/this.scale;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2);
-        ctx.strokeStyle = 'rgba(52,211,153,0.7)'; ctx.lineWidth = 2/this.scale; ctx.stroke();
-        ctx.beginPath(); ctx.arc(p.x, p.y, 3/this.scale, 0, Math.PI*2);
+    }
+    ctx.setLineDash([]);
+
+    // nodos
+    const labels = [];
+    for (const [id, p] of Object.entries(pos)) {
+      const n = this.nodes[id]; if (!n) continue;
+      if (vis && !vis.has(id)) continue;
+      if (!onScreen(p)) continue;
+      const t = this._TYPE[n.type] || this._TYPE.module, rad = this._sr(id);
+      const isLit = !lit || lit.has(id), isSel = sel === id, isHov = hov === id;
+      ctx.globalAlpha = isLit ? 1 : 0.14;
+      const dead = this._dead[id];
+      if (isSel || isHov) {
+        ctx.beginPath(); ctx.arc(p.x, p.y, rad + 4 * inv, 0, Math.PI * 2);
+        ctx.strokeStyle = t.color + '66'; ctx.lineWidth = 3 * inv; ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x, p.y, rad + 1.5 * inv, 0, Math.PI * 2);
+        ctx.strokeStyle = isSel ? '#fff' : '#cbd5e1'; ctx.lineWidth = 1.4 * inv; ctx.stroke();
+      }
+      if (n.type === 'class') {      // clases como rombo suave para distinguirlas sin color
+        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(p.x - rad, p.y - rad, rad * 2, rad * 2, rad * 0.45) : ctx.rect(p.x - rad, p.y - rad, rad * 2, rad * 2);
+      } else { ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, Math.PI * 2); }
+      ctx.fillStyle = t.color; ctx.fill();
+      if (dead >= 0.4) {
+        ctx.beginPath(); ctx.arc(p.x, p.y, rad + 2.5 * inv, 0, Math.PI * 2);
+        ctx.strokeStyle = dead >= 0.7 ? '#f87171' : '#fbbf24'; ctx.lineWidth = 1.6 * inv; ctx.stroke();
+      }
+      // etiquetas con prioridad y nivel de detalle
+      let prio = -1;
+      if (isSel || isHov) prio = 100;
+      else if (this._query && this._matches.includes(id)) prio = 90;
+      else if (n.type === 'file') prio = 50 + Math.min(20, this._deg[id] || 0);
+      else if (n.type === 'class' && (sc > 0.8 || (lit && lit.has(id) && lit.size < 60))) prio = 30;
+      else if ((n.type === 'function' || n.type === 'module' || n.type === 'external') && (sc > 1.5 || (lit && lit.size < 40 && lit.has(id)))) prio = 10;
+      if (prio >= 0 && isLit) labels.push({ id, p, rad, prio, text: n.label || id });
+    }
+    ctx.globalAlpha = 1;
+
+    // etiquetas sin solaparse
+    labels.sort((a, b) => b.prio - a.prio);
+    const fs = 11 * inv, placed = [], max = 220;
+    ctx.font = `${fs}px "DM Mono", monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    let drawn = 0;
+    for (const L of labels) {
+      if (drawn >= max && L.prio < 90) break;
+      const text = L.text.length > 34 ? L.text.slice(0, 33) + '…' : L.text;
+      const tw = ctx.measureText(text).width, th = fs;
+      const bx = L.p.x - tw / 2, by = L.p.y - L.rad - 4 * inv - th;
+      let clash = false;
+      if (L.prio < 90) for (const r of placed) { if (bx < r.x + r.w && bx + tw > r.x && by < r.y + r.h && by + th > r.y) { clash = true; break; } }
+      if (clash) continue;
+      placed.push({ x: bx, y: by, w: tw, h: th }); drawn++;
+      ctx.lineWidth = 3 * inv; ctx.strokeStyle = 'rgba(13,15,20,0.9)'; ctx.strokeText(text, L.p.x, L.p.y - L.rad - 4 * inv);
+      ctx.fillStyle = L.prio >= 90 ? '#ffffff' : L.prio >= 50 ? '#d4d8e8' : '#9aa3bd';
+      ctx.fillText(text, L.p.x, L.p.y - L.rad - 4 * inv);
+    }
+
+    // overlay runtime
+    if (this._rtActiveNodes && this._rtActiveNodes.size) {
+      for (const id of this._rtActiveNodes) {
+        const p = pos[id]; if (!p || (vis && !vis.has(id))) continue;
+        const r = this._sr(id) + 6 * inv;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(52,211,153,0.7)'; ctx.lineWidth = 2 * inv; ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x, p.y, 3 * inv, 0, Math.PI * 2);
         ctx.fillStyle = '#34d399'; ctx.fill();
       }
     }
-
-    // Heat Map Overlay
+    // heat map
     if (HeatMap._enabled) {
-      for (const [id, p] of Object.entries(this.pos)) {
-        const alpha = HeatMap.getAlpha(id);
-        if (alpha === null || alpha < 0.05) continue;
-        const node = this.nodes[id]; if (!node) continue;
-        const r = (node.type === 'file' ? 9 : 6) / this.scale * 2;
-        ctx.beginPath(); ctx.arc(p.x, p.y, r + 4/this.scale, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(251,191,36,${(alpha * 0.8).toFixed(2)})`;
-        ctx.lineWidth = 2/this.scale; ctx.stroke();
+      for (const [id, p] of Object.entries(pos)) {
+        const al = HeatMap.getAlpha(id);
+        if (al === null || al < 0.05 || (vis && !vis.has(id))) continue;
+        ctx.beginPath(); ctx.arc(p.x, p.y, this._sr(id) + 5 * inv, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(251,191,36,${(al * 0.8).toFixed(2)})`; ctx.lineWidth = 2 * inv; ctx.stroke();
       }
     }
-
-    ctx.globalAlpha=1; ctx.restore();
+    ctx.restore();
   },
 
-  _s2w(sx,sy){return[(sx-this.ox)/this.scale,(sy-this.oy)/this.scale];},
+  // ── Minimapa ──
+  _drawMini() {
+    const mc = $('graph-minimap'); if (!mc || mc.style.display === 'none') return;
+    const ctx = mc.getContext('2d'), dpr = this._DPR || 1, w = 150, h = 100;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    const b = this._bounds(); if (!b) return;
+    const pad = 8, k = Math.min((w - pad * 2) / ((b.maxx - b.minx) || 1), (h - pad * 2) / ((b.maxy - b.miny) || 1));
+    const offx = (w - (b.maxx - b.minx) * k) / 2 - b.minx * k, offy = (h - (b.maxy - b.miny) * k) / 2 - b.miny * k;
+    this._mm = { k, offx, offy };
+    const lit = this._litSet();
+    for (const [id, p] of Object.entries(this.pos)) {
+      if (this._visNodes && !this._visNodes.has(id)) continue;
+      const n = this.nodes[id]; if (!n) continue;
+      ctx.fillStyle = (this._TYPE[n.type] || this._TYPE.module).color;
+      ctx.globalAlpha = lit && !lit.has(id) ? 0.2 : 0.9;
+      const s = n.type === 'file' ? 2.2 : 1.2;
+      ctx.fillRect(p.x * k + offx - s / 2, p.y * k + offy - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+    const vx = (-this.ox / this.scale) * k + offx, vy = (-this.oy / this.scale) * k + offy;
+    ctx.strokeStyle = '#7eb8f7'; ctx.lineWidth = 1;
+    ctx.strokeRect(vx, vy, (this._W / this.scale) * k, (this._H / this.scale) * k);
+  },
+  _miniPan(e) {
+    if (!this._mm) return;
+    const r = e.target.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * (150 / r.width), my = (e.clientY - r.top) * (100 / r.height);
+    const wx = (mx - this._mm.offx) / this._mm.k, wy = (my - this._mm.offy) / this._mm.k;
+    this._goto(this._W / 2 - wx * this.scale, this._H / 2 - wy * this.scale, this.scale, true);
+  },
 
-  _nodeAt(sx,sy) {
-    const [wx,wy]=this._s2w(sx,sy); let best=null,bestD=Infinity;
-    Object.entries(this.pos).forEach(([id,p])=>{
-      const d=Math.hypot(p.x-wx,p.y-wy), r=(this.nodes[id]?.type==='file'?9:6)/this.scale*2;
-      if(d<r&&d<bestD){best=id;bestD=d;}
-    });
+  // ── Interacción ──
+  _s2w(sx, sy) { return [(sx - this.ox) / this.scale, (sy - this.oy) / this.scale]; },
+
+  _nodeAt(sx, sy) {
+    const [wx, wy] = this._s2w(sx, sy); let best = null, bestD = Infinity;
+    const vis = this._visNodes;
+    for (const [id, p] of Object.entries(this.pos)) {
+      if (vis && !vis.has(id)) continue;
+      const d = Math.hypot(p.x - wx, p.y - wy), r = Math.max(this._sr(id), 6 / this.scale);
+      if (d < r && d < bestD) { best = id; bestD = d; }
+    }
     return best;
   },
 
-  _onDown(e) {
-    const id=this._nodeAt(e.offsetX,e.offsetY);
-    if(id){
-      this.dragging=id; this.selectedNode=id;
-      UI.showNodeDetail(id,this.nodes[id]);
+  _pDown(e) {
+    this.canvas.setPointerCapture?.(e.pointerId);
+    this._pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+    if (this._pointers.size === 2) { this.dragging = null; this.panStart = null; this._pinch = this._pinchState(); return; }
+    this._anim = null;
+    const id = this._nodeAt(e.offsetX, e.offsetY);
+    if (id) {
+      this.dragging = id; this.selectedNode = id; this._moved = false;
+      UI.showNodeDetail(id, this.nodes[id]);
       this._applyFilters();
     } else {
-      this.panStart={x:e.offsetX-this.ox,y:e.offsetY-this.oy};
+      this.panStart = { x: e.offsetX - this.ox, y: e.offsetY - this.oy };
     }
   },
-  _onMove(e) {
-    if(this.dragging){const[wx,wy]=this._s2w(e.offsetX,e.offsetY);this.pos[this.dragging].x=wx;this.pos[this.dragging].y=wy;}
-    else if(this.panStart){this.ox=e.offsetX-this.panStart.x;this.oy=e.offsetY-this.panStart.y;}
-    // Tooltip
-    const id=this._nodeAt(e.offsetX,e.offsetY);
-    if(id&&!this.dragging&&!this.panStart){
-      Tooltip.showForNode(id,this.nodes[id],State.analysis,e.clientX,e.clientY);
-    } else if(!id) {
-      Tooltip.hide();
+  _pinchState() {
+    const [a, b] = [...this._pointers.values()];
+    return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, s: this.scale, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  },
+  _pMove(e) {
+    if (this._pointers.has(e.pointerId)) this._pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+    if (this._pointers.size === 2 && this._pinch) {
+      const [a, b] = [...this._pointers.values()], d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const s = Math.max(0.05, Math.min(8, this._pinch.s * d / this._pinch.d));
+      this._zoomAt(this._pinch.mx, this._pinch.my, s / this.scale); return;
+    }
+    if (this.dragging) {
+      const [wx, wy] = this._s2w(e.offsetX, e.offsetY), p = this.pos[this.dragging];
+      if (p) { p.x = wx; p.y = wy; this._moved = true; this._reheat(0.3); }
+    } else if (this.panStart) {
+      this.ox = e.offsetX - this.panStart.x; this.oy = e.offsetY - this.panStart.y;
+    } else {
+      const id = this._nodeAt(e.offsetX, e.offsetY);
+      if (id !== this._hover) {
+        this._hover = id; this.canvas.style.cursor = id ? 'pointer' : 'grab';
+        if (id) Tooltip.showForNode(id, this.nodes[id], State.analysis, e.clientX, e.clientY); else Tooltip.hide();
+      } else if (id) Tooltip.showForNode(id, this.nodes[id], State.analysis, e.clientX, e.clientY);
     }
   },
-  _onUp()   {this.dragging=null;this.panStart=null;},
-  _onWheel(e){
+  _pUp(e) {
+    this._pointers.delete(e.pointerId); this._pinch = null;
+    if (this._pointers.size === 0) { this.dragging = null; this.panStart = null; }
+  },
+  _onWheel(e) {
     e.preventDefault();
-    const f=e.deltaY<0?1.1:0.9;
-    this.ox=e.offsetX-(e.offsetX-this.ox)*f; this.oy=e.offsetY-(e.offsetY-this.oy)*f;
-    this.scale=Math.max(0.1,Math.min(8,this.scale*f));
+    this._zoomAt(e.offsetX, e.offsetY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
   },
-  _onDbl(e){
-    const id=this._nodeAt(e.offsetX,e.offsetY);
-    if(id&&this.nodes[id]?.type==='file'){const path=this.nodes[id].path;if(path)UI.selectFile(CSS.escape(path));}
+  _onDbl(e) {
+    const id = this._nodeAt(e.offsetX, e.offsetY);
+    if (id && this.nodes[id]?.type === 'file') { const path = this.nodes[id].path; if (path) UI.selectFile(CSS.escape(path)); }
+    else if (!id) this.fitView();
   },
-  zoomIn() {this.scale=Math.min(8,this.scale*1.2);},
-  zoomOut(){this.scale=Math.max(0.1,this.scale/1.2);},
-  fitView(){
-    const ps=Object.values(this.pos); if(!ps.length) return;
-    const xs=ps.map(p=>p.x),ys=ps.map(p=>p.y),pad=60;
-    const s=Math.min((this.canvas.width-pad*2)/(Math.max(...xs)-Math.min(...xs)||1),(this.canvas.height-pad*2)/(Math.max(...ys)-Math.min(...ys)||1));
-    this.scale=Math.min(s,3);this.ox=pad-Math.min(...xs)*this.scale;this.oy=pad-Math.min(...ys)*this.scale;
+  _onKey(e) {
+    const t = e.target, tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const tab = $('tab-graph'); if (!tab || !tab.classList.contains('active') || !this.canvas || this.canvas.style.display === 'none') return;
+    if (e.key === '/') { e.preventDefault(); $('graph-search')?.focus(); }
+    else if (e.key === 'f' || e.key === 'F') this.cycleFocus();
+    else if (e.key === '0') this.fitView();
+    else if (e.key === 'Escape') this.clearSelection();
   },
-  togglePhysics(){
-    this.physicsOn=!this.physicsOn;
-    $('btn-physics').style.color=this.physicsOn?'var(--accent3)':'var(--dim)';
-  },
-  highlightFile(path){
-    this.hlFile=path;
-    this.selectedNode=`file:${path}`;
+
+  clearSelection() {
+    this.selectedNode = null; this.hlFile = null; this._hover = null; this.focusHops = 0;
+    const fb = $('btn-focus'); if (fb) fb.style.color = '';
     this._applyFilters();
+  },
+  cycleFocus() {
+    if (!this.selectedNode) { this.focusHops = 0; return; }
+    this.focusHops = (this.focusHops + 1) % 3;
+    const fb = $('btn-focus'); if (fb) fb.style.color = this.focusHops ? 'var(--accent3)' : '';
+    if (fb) fb.title = this.focusHops ? `Foco: ${this.focusHops} salto(s) — clic para cambiar (F)` : 'Foco en vecindad (F)';
+    this._applyFilters();
+    if (this.focusHops) this.fitView();
+  },
+
+  // ── Búsqueda ──
+  search(q) {
+    q = (q || '').trim().toLowerCase(); this._query = q; this._matchIdx = 0;
+    const out = $('graph-search-count');
+    if (!q) { this._matches = []; if (out) out.textContent = ''; return; }
+    this._matches = Object.keys(this.nodes).filter(id => {
+      if (this._visNodes && !this._visNodes.has(id)) return false;
+      const n = this.nodes[id];
+      return String(n.label || id).toLowerCase().includes(q) || String(n.path || '').toLowerCase().includes(q);
+    }).sort((a, b) => (this._deg[b] || 0) - (this._deg[a] || 0));
+    if (out) out.textContent = this._matches.length ? `1/${this._matches.length}` : '0';
+    if (this._matches.length) this.centerOn(this._matches[0], 1.2);
+  },
+  searchNext() {
+    if (!this._matches.length) return;
+    this._matchIdx = (this._matchIdx + 1) % this._matches.length;
+    const out = $('graph-search-count'); if (out) out.textContent = `${this._matchIdx + 1}/${this._matches.length}`;
+    this.centerOn(this._matches[this._matchIdx], 1.2);
+  },
+
+  exportPNG() {
+    if (!this.canvas) return;
+    const c = document.createElement('canvas'); c.width = this.canvas.width; c.height = this.canvas.height;
+    const x = c.getContext('2d'); x.fillStyle = '#0d0f14'; x.fillRect(0, 0, c.width, c.height); x.drawImage(this.canvas, 0, 0);
+    c.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'flowinspector-graph.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); });
+  },
+
+  togglePhysics() {
+    this.physicsOn = !this.physicsOn;
+    if (this.physicsOn) this._reheat(0.4);
+    $('btn-physics').style.color = this.physicsOn ? 'var(--accent3)' : 'var(--dim)';
+  },
+  highlightFile(path) {
+    this.hlFile = path;
+    this.selectedNode = `file:${path}`;
+    this._applyFilters();
+    this.centerOn(this.selectedNode, 1.0);
   },
 };
 
@@ -2572,7 +3043,7 @@ FORMATO DE RESPUESTA — JSON puro, sin markdown, sin texto adicional:
       // Translate common Groq errors to Spanish
       if (response.status === 401) throw new Error('API key inválida. Verificá tu key de Groq.');
       if (response.status === 429) throw new Error('Rate limit alcanzado. Esperá unos segundos y reintentá.');
-      if (String(msg).includes('1001') || String(msg).includes('context')) throw new Error('El repositorio es muy grande para este modelo. Usá "Solo archivos" o un modelo con más contexto (Llama 3.3 70B).');
+      if (String(msg).includes('1001') || String(msg).includes('context')) throw new Error('El repositorio es muy grande para este modelo. Usá "Solo archivos" o un modelo con más contexto (por ejemplo openai/gpt-oss-120b).');
       throw new Error(msg);
     }
 
@@ -3596,6 +4067,7 @@ Tooltip.init();
 UI.setStatus('Listo — subí un repositorio para comenzar');
 // Auth init (check if login required)
 Auth.init();
+UI.loadModels();
 
 </script>
 </body>

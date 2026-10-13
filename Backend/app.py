@@ -30,6 +30,14 @@ except ImportError:
     except ImportError:
         _UNIFIED_OK = False
 
+try:
+    from . import report as _report
+except ImportError:
+    try:
+        import report as _report
+    except ImportError:
+        _report = None
+
 _log = logging.getLogger("flowinspector")
 
 app = FastAPI(title="Flow Inspector API", version="3.1.0")
@@ -683,7 +691,14 @@ def run_analysis(files):
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/health")
-def health(): return {"status": "healthy", "version": "3.1.0", "engine": _engine_info()}
+def health(): return {"status": "healthy", "version": "3.1.0", "engine": _engine_info(),
+                      "models": _report.config.describe() if _report else None}
+
+@app.get("/models")
+def list_models():
+    """Modelos de IA configurados (FI_MODELS) y modelo preferido por rol."""
+    if not _report: raise HTTPException(501, "Módulo de informes no disponible.")
+    return _report.config.describe()
 
 class DumpPayload(BaseModel): content: str
 
@@ -794,11 +809,14 @@ async def analyze_web_dump(payload: DumpPayload, _auth=Depends(require_auth)):
     except Exception as e: raise HTTPException(500, str(e))
 
 class GroqProxyReq(BaseModel):
-    api_key: str; model: str; messages: list; max_tokens: int = 2048; temperature: float = 0.1
+    api_key: str; model: str = ""; messages: list; max_tokens: int = 2048; temperature: float = 0.1
 
 @app.post("/api/groq")
 async def groq_proxy(req: GroqProxyReq, _auth=Depends(require_auth)):
     import urllib.request, urllib.error, json as _json
+    if _report:   # un modelo retirado/no configurado no rompe la UI: se usa el preferido
+        allowed = _report.config.get_models()
+        if req.model not in allowed: req.model = _report.config.role_model("chat")
     body = {"model": req.model, "messages": req.messages, "max_tokens": req.max_tokens, "temperature": req.temperature, "response_format": {"type": "json_object"}}
     payload = _json.dumps(body).encode("utf-8")
     http_req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=payload,
@@ -813,6 +831,53 @@ async def groq_proxy(req: GroqProxyReq, _auth=Depends(require_auth)):
         raise HTTPException(e.code, detail=msg)
     except urllib.error.URLError as e: raise HTTPException(502, detail=f"No se pudo contactar Groq: {e.reason}")
     except Exception as e: raise HTTPException(502, detail=str(e))
+
+
+# ─── INFORMES AUTOMÁTICOS ────────────────────────────────
+
+def _report_response(analysis: dict, project: str, ai: bool, api_key: str, model: str, baseline: Optional[dict], fmt: str):
+    R = _report
+    rep = R.build_report(analysis, project)
+    snap = R.make_snapshot(analysis, rep)
+    diff = R.diff_snapshots(baseline, snap) if baseline else None
+    narr, attempts = None, []
+    if ai:
+        res = R.generate_narrative(rep, api_key=api_key, preferred=model)
+        narr, attempts = res["narrative"], res["attempts"]
+    md = R.to_markdown(rep, narr, diff)
+    out = {"report": rep, "narrative": narr, "ai_attempts": attempts, "diff": diff, "snapshot": snap, "markdown": md}
+    if fmt == "html": out["html"] = R.to_html(rep, narr, diff)
+    return out
+
+@app.post("/report/analysis")
+async def report_from_analysis(payload: dict, _auth=Depends(require_auth)):
+    """Informe a partir de un análisis ya hecho. Body: {analysis, project?, ai?, api_key?, model?, baseline?, format?}"""
+    if not _report: raise HTTPException(501, "Módulo de informes no disponible.")
+    a = payload.get("analysis")
+    if not isinstance(a, dict) or "structure" not in a: raise HTTPException(400, "Falta `analysis` válido.")
+    try:
+        return JSONResponse(content=_report_response(a, str(payload.get("project", "")), bool(payload.get("ai")),
+                            str(payload.get("api_key", "")), str(payload.get("model", "")), payload.get("baseline"), str(payload.get("format", "md"))))
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(500, f"{type(e).__name__}: {e}")
+
+@app.post("/report")
+async def report_from_zip(file: UploadFile = File(...), ai: bool = False, model: str = "", format: str = "md",
+                          baseline: Optional[UploadFile] = File(None), request: Request = None, _auth=Depends(require_auth)):
+    """Sube un .zip de Python y devuelve el informe. La clave de Groq va en el header `x-groq-key` o en GROQ_API_KEY."""
+    if not _report: raise HTTPException(501, "Módulo de informes no disponible.")
+    try:
+        fd = {}
+        with zipfile.ZipFile(io.BytesIO(await file.read())) as zf:
+            for name in zf.namelist():
+                if name.endswith(".py") and not name.startswith("__MACOSX"):
+                    fd[name.replace("\\", "/")] = zf.read(name).decode("utf-8", errors="replace")
+        if not fd: raise HTTPException(400, "El ZIP no contiene archivos .py.")
+        base = json.loads((await baseline.read()).decode("utf-8")) if baseline else None
+        key = request.headers.get("x-groq-key", "") if request else ""
+        return JSONResponse(content=_report_response(run_analysis(fd), (file.filename or "").replace(".zip", ""), ai, key, model, base, format))
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(500, f"{type(e).__name__}: {e}")
 
 # ═══════════════════════════════════════════════════════════
 # RUNTIME — v4  (Observabilidad cognitiva)

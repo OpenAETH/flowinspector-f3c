@@ -109,7 +109,11 @@ class ModuleIndex:
         return ".".join(parts), is_pkg
 
     def module_of(self, path: str) -> Tuple[str, bool]:
-        return self.mod_of.get(path, (self._parts(path)[-1] if path else "", False))
+        hit = self.mod_of.get(path)
+        if hit is not None:
+            return hit
+        parts = self._parts(path) if path else []
+        return (parts[-1] if parts else "", False)
 
     # ── resolución ───────────────────────────────────
     def _file_or_ns(self, base_dir: str, parts: List[str]) -> Optional[Tuple[str, Optional[str]]]:
